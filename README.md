@@ -6,7 +6,7 @@ submit evidence, and compete on a server clock. Original engineering spec in
 `docs/BARCELONA-SCRIPT.md` - is adapted into `challenges/barcelona-route.json`;
 see **The real route** below for what changed in that adaptation.
 
-## Status: Phase 7 hardening, on top of the real route and dashboard
+## Status: player visual skin, on top of Phase 7 hardening and the real route
 
 Per the build sequence in the concept doc (§13):
 
@@ -101,6 +101,80 @@ detection during GPS reporting itself, concurrent-request dedup) and
 Phase 8 polish (a live map, richer challenge types, course close). See
 "What's not built yet" below for exactly what that leaves unautomated on
 the real route.
+
+## Player visual skin
+
+`app/team/page.tsx` now renders through a "torn route envelope" identity
+(cream packet, terracotta primary verb, team-colour rail, a decisive
+green/amber/red verdict panel per outcome) instead of the plain dark
+`.card` UI the rest of the site still uses. `/admin` and `/leaderboard`
+are untouched - the skin's CSS is scoped to `.phone`/`.packet`/`.thumb`/
+`.verdict`, appended to `app/globals.css` after the original rules, not
+replacing them.
+
+What actually changed in `app/team/page.tsx`, beyond the markup: every
+outcome (correct, wrong, ambiguous, skip, an exhausted retry) now renders
+through one `Verdict` object (`kind`, `heading`, `text`, `cta`, `onCta`)
+as a full-panel takeover instead of an inline message next to the form -
+this is a real behaviour change, not just a restyle, and it's why a wrong
+answer or a failed upload now feels like a distinct moment rather than a
+line of red text. `postJsonWithRetry`, the geolocation watch effect,
+`compressImage`, and every `idempotencyKey` call site are untouched.
+
+Three integration bugs were caught only by rendering the real app with
+real checkpoint data, not by reading the CSS pack in isolation - each
+fixed here in `app/globals.css` and also in the original design-pack
+files sent separately, so the pack itself stays correct for next time:
+
+- **The verdict panel rendered as a narrow column, not full-width.**
+  `.stage` is a `<main>` element (per the pack's own integration
+  instructions), and the site's pre-existing base `main { max-width:480px;
+  margin:0 auto; }` rule still applied on top of it. Combined with `.stage`
+  being a CSS grid item of `.phone`, an unset width plus `margin:auto`
+  shrank it to content size instead of filling the grid cell. Fixed with
+  an explicit `max-width:none; margin:0;` on `.stage`.
+- **The photo checkpoint's "camera frame" placeholder rendered as bare
+  text, no box.** `.preview` (the before-a-photo placeholder) was only
+  ever defined in the standalone prototype's own `<style>` - `team-skin.css`
+  carried `.preview-frame` (the after-a-photo state) but never picked up
+  its sibling. Added the missing rule.
+- **The final checkpoint's "Clear" verdict never appeared - the player
+  jumped straight to "Race complete."** A correct submission on the *last*
+  checkpoint sets `state.finished` in the same update as the verdict
+  itself; the render logic checked `state.finished` before `verdict`, so
+  the finished packet pre-empted the celebratory panel entirely. Fixed by
+  checking `verdict` first, always - the finished packet only ever shows
+  once the player has dismissed it.
+
+Verified live end to end via Playwright against the real desk-race route
+with the AI judging call stubbed: full run through all 6 checkpoint types
+(wrong answer -> red -> resubmit -> correct -> green, straight through to
+the photo checkpoint and finish), at both 390x844 and a short 375x667
+viewport, plus a check that `/admin` and `/leaderboard` render unchanged
+(one pre-existing, unrelated nit found there - the custom penalty row's
+"seconds" input placeholder truncates to "secon" at its fixed 70px width;
+confirmed present before this change too, not something this patch caused,
+left as-is).
+
+Three calls made without stopping to ask, each reversible:
+
+- **Organiser-queue copy softened.** The pack's amber verdict said "an
+  organiser has the queue" for an ambiguous photo - untrue today, there's
+  no cross-team queue yet (see "What's not built yet"). Now reads "no
+  penalty - try a clearer photo, or an organiser can step in," true either
+  way.
+- **Font stack shipped as designed** - system `Arial Narrow`/`Impact`, no
+  self-hosted face. Solid on iOS, will fall back further on some Android
+  phones; a real cost for a walk-around event with mixed phones, not
+  fixed here.
+- **Team Red's rail colour left as-is**, close to the alert/incorrect red.
+  The verdict text ("No") already carries the meaning regardless of
+  colour; a deliberate nudge apart is still on the table if it reads badly
+  live.
+
+Login (`app/team/login/page.tsx`) is still the plain dark UI - the pack
+explicitly scoped that out of the first pass ("can reuse `.phone` + packet
+later. Not required for the first visual pass").
 
 ## The real route
 

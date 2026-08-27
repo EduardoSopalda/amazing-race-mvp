@@ -11,6 +11,11 @@ function formatSeconds(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function stampFor(challengeType: string): string {
+  if (challengeType === "qr") return "QR";
+  return challengeType.charAt(0).toUpperCase() + challengeType.slice(1);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -58,31 +63,50 @@ type GpsStatus =
   | { kind: "waiting" }
   | { kind: "rejected"; reason: "poor_accuracy" | "too_far"; distanceMeters: number; accuracyMeters: number };
 
-function GpsStatusView({ status }: { status: GpsStatus }) {
+/** Maps every real GPS state onto the skin's .gps.good|poor|dead meter, with real numbers where there are any. */
+function gpsMeterInfo(status: GpsStatus): { cls: "good" | "poor" | "dead"; signal: string; detail: string } {
   switch (status.kind) {
     case "unsupported":
-      return <p className="error">This browser can&apos;t access location. Try a different phone or browser.</p>;
+      return { cls: "dead", signal: "Unavailable", detail: "This browser can't access location. Try a different phone or browser." };
     case "denied":
-      return (
-        <p className="error">
-          Location permission denied. Enable it for this site in your browser settings, then reload.
-        </p>
-      );
+      return { cls: "dead", signal: "Denied", detail: "Enable location for this site in your browser settings, then reload." };
     case "searching":
-      return <p>Requesting location permission and searching for a signal...</p>;
+      return { cls: "poor", signal: "Searching…", detail: "Requesting a fix. Keep this page open." };
     case "waiting":
-      return <p>Got a signal, checking it against the checkpoint...</p>;
+      return { cls: "poor", signal: "Checking…", detail: "Confirming your position against the checkpoint." };
     case "rejected":
       if (status.reason === "poor_accuracy") {
-        return (
-          <p>
-            GPS signal is weak (accuracy {Math.round(status.accuracyMeters)}m). Move to open sky and keep this
-            page open.
-          </p>
-        );
+        return { cls: "poor", signal: `Poor · ${Math.round(status.accuracyMeters)}m`, detail: "Move to open sky and keep this page open." };
       }
-      return <p>Not there yet - about {Math.round(status.distanceMeters)}m away. Keep walking.</p>;
+      return { cls: "poor", signal: `${Math.round(status.distanceMeters)}m away`, detail: "Keep walking." };
   }
+}
+
+function GpsMeter({ status }: { status: GpsStatus }) {
+  const info = gpsMeterInfo(status);
+  return (
+    <div className={`gps ${info.cls}`}>
+      <div className="gps-row">
+        <span>Signal</span>
+        <span>{info.signal}</span>
+      </div>
+      <div className="meter">
+        <i />
+      </div>
+      <div className="gps-row">
+        <span>{info.detail}</span>
+      </div>
+    </div>
+  );
+}
+
+/** A decisive full-panel outcome - correct/ambiguous/incorrect/skip/transport failure all render through this one shape (doc verdict map: correct -> green, ambiguous or upload fail -> amber, wrong or skip -> red). */
+interface Verdict {
+  kind: "green" | "amber" | "red";
+  heading: string;
+  text: string;
+  cta: string;
+  onCta: () => void;
 }
 
 export default function TeamPage() {
@@ -90,7 +114,7 @@ export default function TeamPage() {
   const [state, setState] = useState<TeamStatePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [busy, setBusy] = useState(false);
 
   // serverNowMs - Date.now() at the moment of the last fetch, so we can keep
@@ -203,7 +227,6 @@ export default function TeamPage() {
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
-  const [photoFeedback, setPhotoFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   // Kept only while an upload hasn't actually reached the server (network
   // failure or 5xx after retries) - lets "Retry upload" resend without
   // making the team retake and recompose the photo.
@@ -233,7 +256,6 @@ export default function TeamPage() {
   }
 
   async function submitPhoto(base64: string, mediaType: "image/jpeg", idempotencyKey: string) {
-    setPhotoFeedback(null);
     setPhotoBusy(true);
     try {
       const { ok, status, data } = await postJsonWithRetry("/api/team/photo", {
@@ -247,26 +269,64 @@ export default function TeamPage() {
         // its key, so a resend is recognised server-side as the same
         // attempt rather than a second AI judging call) for "Retry upload".
         setPendingPhoto({ base64, mediaType, idempotencyKey });
-        setPhotoFeedback({ ok: false, text: "Upload failed - check your connection, then tap Retry upload." });
+        setVerdict({
+          kind: "amber",
+          heading: "Hold",
+          text: "Upload didn't go through. Check your connection, then retry.",
+          cta: "Retry upload",
+          onCta: () => {
+            setVerdict(null);
+            submitPhoto(base64, mediaType, idempotencyKey);
+          },
+        });
         return;
       }
       setPendingPhoto(null);
       if (!ok) {
-        setPhotoFeedback({ ok: false, text: data.error ?? "Could not submit photo" });
+        setVerdict({
+          kind: "amber",
+          heading: "Hold",
+          text: data.error ?? "Could not submit that photo.",
+          cta: "Retry",
+          onCta: () => setVerdict(null),
+        });
         return;
       }
 
-      const result = data.result as { outcome: string; pointsAwarded: number; penaltySeconds: number };
+      const result = data.result as { outcome: string; pointsAwarded: number; penaltySeconds: number; finished: boolean };
       const judgement = data.judgement as { reason: string };
       if (result.outcome === "correct") {
-        setPhotoFeedback({ ok: true, text: `Correct! +${result.pointsAwarded} points. ${judgement.reason}` });
-        setPhotoPreview(null);
+        setVerdict({
+          kind: "green",
+          heading: "Clear",
+          text: `+${result.pointsAwarded} points. ${judgement.reason}`,
+          cta: result.finished ? "Finish" : "Next stop",
+          onCta: () => {
+            setVerdict(null);
+            setPhotoPreview(null);
+          },
+        });
       } else if (result.outcome === "ambiguous") {
-        setPhotoFeedback({ ok: false, text: `Not sure yet - ${judgement.reason} Try a clearer photo.` });
+        setVerdict({
+          kind: "amber",
+          heading: "Hold",
+          text: `${judgement.reason} No penalty - try a clearer photo, or an organiser can step in.`,
+          cta: "Shoot again",
+          onCta: () => {
+            setVerdict(null);
+            setPhotoPreview(null);
+          },
+        });
       } else {
-        setPhotoFeedback({
-          ok: false,
-          text: `Not quite. +${result.penaltySeconds}s penalty. ${judgement.reason}`,
+        setVerdict({
+          kind: "red",
+          heading: "No",
+          text: `+${result.penaltySeconds}s penalty. ${judgement.reason}`,
+          cta: "Resubmit",
+          onCta: () => {
+            setVerdict(null);
+            setPhotoPreview(null);
+          },
         });
       }
       setState(data.state as TeamStatePayload);
@@ -279,13 +339,12 @@ export default function TeamPage() {
   async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPhotoFeedback(null);
     try {
       const { base64, mediaType, dataUrl } = await compressImage(file);
       setPhotoPreview(dataUrl);
       await submitPhoto(base64, mediaType, crypto.randomUUID());
     } catch (err) {
-      setPhotoFeedback({ ok: false, text: (err as Error).message });
+      setVerdict({ kind: "amber", heading: "Hold", text: (err as Error).message, cta: "Retry", onCta: () => setVerdict(null) });
     } finally {
       if (photoInputRef.current) photoInputRef.current.value = "";
     }
@@ -295,26 +354,46 @@ export default function TeamPage() {
     e.preventDefault();
     if (!answer.trim()) return;
     setBusy(true);
-    setFeedback(null);
     try {
       const { ok, status, data } = await postJsonWithRetry("/api/team/submit", {
         answer,
         idempotencyKey: crypto.randomUUID(),
       });
       if (status === 0) {
-        setFeedback({ ok: false, text: "Could not reach the race server - check your connection and try again." });
+        setVerdict({
+          kind: "amber",
+          heading: "Hold",
+          text: "Couldn't reach the race server. Check your connection and resubmit.",
+          cta: "Retry",
+          onCta: () => setVerdict(null),
+        });
         return;
       }
       if (!ok) {
-        setFeedback({ ok: false, text: data.error ?? "Could not submit" });
+        setVerdict({ kind: "amber", heading: "Hold", text: data.error ?? "Could not submit that.", cta: "Retry", onCta: () => setVerdict(null) });
         return;
       }
-      setAnswer("");
-      const result = data.result as { outcome: string; pointsAwarded: number; penaltySeconds: number };
+      const result = data.result as { outcome: string; pointsAwarded: number; penaltySeconds: number; finished: boolean };
       if (result.outcome === "correct") {
-        setFeedback({ ok: true, text: `Correct! +${result.pointsAwarded} points.` });
+        setAnswer("");
+        setVerdict({
+          kind: "green",
+          heading: "Clear",
+          text: `+${result.pointsAwarded} points.`,
+          cta: result.finished ? "Finish" : "Next stop",
+          onCta: () => setVerdict(null),
+        });
       } else {
-        setFeedback({ ok: false, text: `Not quite. +${result.penaltySeconds}s penalty. Try again.` });
+        setVerdict({
+          kind: "red",
+          heading: "No",
+          text: `+${result.penaltySeconds}s penalty.`,
+          cta: "Resubmit",
+          onCta: () => {
+            setAnswer("");
+            setVerdict(null);
+          },
+        });
       }
       setState(data.state as TeamStatePayload);
       clockOffsetRef.current = (data.state as TeamStatePayload).serverNowMs - Date.now();
@@ -325,21 +404,32 @@ export default function TeamPage() {
 
   async function handleSkip() {
     setBusy(true);
-    setFeedback(null);
     try {
       const { ok, status, data } = await postJsonWithRetry("/api/team/skip", {
         idempotencyKey: crypto.randomUUID(),
       });
       if (status === 0) {
-        setFeedback({ ok: false, text: "Could not reach the race server - check your connection and try again." });
+        setVerdict({
+          kind: "amber",
+          heading: "Hold",
+          text: "Couldn't reach the race server. Check your connection and try again.",
+          cta: "Retry",
+          onCta: () => setVerdict(null),
+        });
         return;
       }
       if (!ok) {
-        setFeedback({ ok: false, text: data.error ?? "Cannot skip yet" });
+        setVerdict({ kind: "amber", heading: "Hold", text: data.error ?? "Cannot skip yet.", cta: "Retry", onCta: () => setVerdict(null) });
         return;
       }
-      const result = data.result as { penaltySeconds: number };
-      setFeedback({ ok: false, text: `Skipped. +${result.penaltySeconds}s penalty.` });
+      const result = data.result as { penaltySeconds: number; finished: boolean };
+      setVerdict({
+        kind: "red",
+        heading: "No",
+        text: `Skipped. +${result.penaltySeconds}s penalty.`,
+        cta: result.finished ? "Finish" : "Next stop",
+        onCta: () => setVerdict(null),
+      });
       setState(data.state as TeamStatePayload);
       clockOffsetRef.current = (data.state as TeamStatePayload).serverNowMs - Date.now();
     } finally {
@@ -349,161 +439,205 @@ export default function TeamPage() {
 
   if (error) {
     return (
-      <main>
-        <p className="error">{error}</p>
-      </main>
+      <div className="phone">
+        <main className="stage">
+          <p className="error">{error}</p>
+        </main>
+      </div>
     );
   }
 
   if (!state) {
     return (
-      <main>
-        <p>Loading...</p>
-      </main>
+      <div className="phone">
+        <main className="stage">
+          <p>Loading...</p>
+        </main>
+      </div>
     );
   }
 
   const estimatedServerNow = displayNow + clockOffsetRef.current;
-
-  if (state.finished) {
-    return (
-      <main>
-        <h1 style={{ color: state.team.colour }}>{state.team.name}</h1>
-        <div className="card">
-          <h2>Finished</h2>
-          <div className="clock">{formatSeconds(state.adjustedTimeSeconds ?? 0)}</div>
-          <div className="stat-row">
-            <span>Penalties</span>
-            <span>+{state.penaltySeconds}s</span>
-          </div>
-          <div className="stat-row">
-            <span>Skips</span>
-            <span>+{state.skipSeconds}s</span>
-          </div>
-          <div className="stat-row">
-            <span>Points</span>
-            <span>{state.points}</span>
-          </div>
-        </div>
-        <button className="secondary" onClick={() => router.push("/leaderboard")}>
-          View leaderboard
-        </button>
-      </main>
-    );
-  }
-
   const checkpoint = state.checkpoint;
   const elapsedOnCheckpoint = checkpoint
     ? Math.max(0, (estimatedServerNow - (checkpoint.unlockedAtMs ?? estimatedServerNow)) / 1000)
     : 0;
   const remaining = checkpoint ? checkpoint.timeLimitSeconds - elapsedOnCheckpoint : 0;
   const skipAvailable = checkpoint ? elapsedOnCheckpoint >= checkpoint.timeLimitSeconds : false;
+  const locked = Boolean(checkpoint && checkpoint.requiresGps && !checkpoint.arrived);
+
+  // Strip clock: elapsed race time while locked, challenge countdown once
+  // open (warns under 60s), adjusted time once finished.
+  let stripClock: string;
+  let stripWarn = false;
+  if (state.finished) {
+    stripClock = formatSeconds(state.adjustedTimeSeconds ?? 0);
+  } else if (locked) {
+    const elapsedRace = state.startedAtMs !== null ? (estimatedServerNow - state.startedAtMs) / 1000 : 0;
+    stripClock = formatSeconds(elapsedRace);
+  } else if (checkpoint) {
+    stripClock = formatSeconds(remaining);
+    stripWarn = remaining <= 60;
+  } else {
+    stripClock = "—";
+  }
+
+  let stage: React.ReactNode;
+  let thumb: React.ReactNode;
+
+  // verdict is checked first: a correct/skipped submission on the *last*
+  // checkpoint sets state.finished=true in the same update as the verdict
+  // itself, so without this order the player would jump straight to "Race
+  // complete" and never see the "Clear" moment for their final submission.
+  if (verdict) {
+    stage = (
+      <div className={`verdict ${verdict.kind}`}>
+        <div>
+          <h2>{verdict.heading}</h2>
+          <p>{verdict.text}</p>
+        </div>
+      </div>
+    );
+    thumb = (
+      <button type="button" className="primary" onClick={verdict.onCta}>
+        {verdict.cta}
+      </button>
+    );
+  } else if (state.finished) {
+    stage = (
+      <div className="packet">
+        <span className="stamp">Finished</span>
+        <h1>Race complete</h1>
+        <p className="mission">Adjusted time includes every penalty and skip along the way.</p>
+        <div className="meta-line">
+          <span>Penalties</span>
+          <span>+{state.penaltySeconds}s</span>
+        </div>
+        <div className="meta-line">
+          <span>Skips</span>
+          <span>+{state.skipSeconds}s</span>
+        </div>
+        <div className="meta-line">
+          <span>Points</span>
+          <span>{state.points}</span>
+        </div>
+      </div>
+    );
+    thumb = (
+      <button type="button" className="primary" onClick={() => router.push("/leaderboard")}>
+        View leaderboard
+      </button>
+    );
+  } else if (checkpoint && locked) {
+    stage = (
+      <div className="packet">
+        <span className="stamp">Locked</span>
+        <h1>Not yet</h1>
+        <p className="clue">The city is still closed. Walk into the fence.</p>
+        <p className="mission">Clue waits until GPS is good enough. A weak fix is not drama - it is a dispute.</p>
+        <GpsMeter status={gpsStatus} />
+      </div>
+    );
+    thumb = (
+      <button type="button" className="secondary" disabled>
+        Clue sealed
+      </button>
+    );
+  } else if (checkpoint && checkpoint.selfChecked) {
+    stage = (
+      <form id="answer-form" className="packet" onSubmit={submitAnswer}>
+        <span className="stamp">{stampFor(checkpoint.challengeType)}</span>
+        <h1>Stop {checkpoint.index}</h1>
+        <p className="clue">{checkpoint.clue}</p>
+        <p className="mission">{checkpoint.instruction}</p>
+        <div className="field">
+          <label htmlFor="answer">Your answer</label>
+          <input
+            id="answer"
+            type="text"
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+      </form>
+    );
+    thumb = (
+      <>
+        <button type="submit" form="answer-form" className="primary" disabled={busy || !answer.trim()}>
+          Submit answer
+        </button>
+        <button type="button" className="secondary" onClick={handleSkip} disabled={busy || !skipAvailable}>
+          {skipAvailable ? "Skip (penalty applies)" : `Skip in ${formatSeconds(remaining)}`}
+        </button>
+      </>
+    );
+  } else if (checkpoint) {
+    stage = (
+      <div className="packet">
+        <span className="stamp">{stampFor(checkpoint.challengeType)}</span>
+        <h1>Stop {checkpoint.index}</h1>
+        <p className="clue">{checkpoint.clue}</p>
+        <p className="mission">{checkpoint.instruction}</p>
+        {photoPreview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="preview-frame" src={photoPreview} alt="Preview of the photo just taken" />
+        ) : (
+          <div className="preview">Camera frame</div>
+        )}
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhotoSelected}
+          style={{ display: "none" }}
+        />
+      </div>
+    );
+    thumb = (
+      <>
+        <button type="button" className="primary" disabled={photoBusy} onClick={() => photoInputRef.current?.click()}>
+          {photoBusy ? "Uploading..." : "Open camera"}
+        </button>
+        {pendingPhoto && (
+          <button
+            type="button"
+            className="secondary"
+            disabled={photoBusy}
+            onClick={() => submitPhoto(pendingPhoto.base64, pendingPhoto.mediaType, pendingPhoto.idempotencyKey)}
+          >
+            {photoBusy ? "Retrying..." : "Retry upload"}
+          </button>
+        )}
+        <button type="button" className="secondary" onClick={handleSkip} disabled={busy || !skipAvailable}>
+          {skipAvailable ? "Skip (penalty applies)" : `Skip in ${formatSeconds(remaining)}`}
+        </button>
+      </>
+    );
+  } else {
+    stage = (
+      <div className="packet">
+        <p className="mission">Loading the next checkpoint...</p>
+      </div>
+    );
+    thumb = null;
+  }
 
   return (
-    <main>
-      <h1 style={{ color: state.team.colour }}>{state.team.name}</h1>
-      {checkpoint && (
-        <>
-          <p>
-            Checkpoint {checkpoint.index} of {checkpoint.total}
+    <div className="phone" data-team={state.team.id} style={{ ["--team" as string]: state.team.colour }}>
+      <header className="strip">
+        <div className="team-seal">{state.team.name.charAt(0).toUpperCase()}</div>
+        <div className="strip-mid">
+          <p className="eyebrow">
+            {state.team.name} · {state.finished ? "Finished" : checkpoint ? `Stop ${checkpoint.index}` : ""}
           </p>
-          <div className="card">
-            <span className="badge">{checkpoint.challengeType}</span>
-            {checkpoint.requiresGps && !checkpoint.arrived ? (
-              <span className="badge" style={{ marginLeft: 8 }}>
-                Locked - reach the location
-              </span>
-            ) : (
-              <div className={`clock ${remaining <= 0 ? "warn" : ""}`}>
-                {remaining > 0 ? formatSeconds(remaining) : "Skip available"}
-              </div>
-            )}
-            <p>
-              <strong>{checkpoint.clue}</strong>
-            </p>
-            <p>{checkpoint.instruction}</p>
-          </div>
-
-          {checkpoint.requiresGps && !checkpoint.arrived ? (
-            <div className="card">
-              <h2>Getting there</h2>
-              <GpsStatusView status={gpsStatus} />
-            </div>
-          ) : checkpoint.selfChecked ? (
-            <form className="card" onSubmit={submitAnswer}>
-              <div className="field">
-                <label htmlFor="answer">Your answer</label>
-                <input
-                  id="answer"
-                  type="text"
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-              <button type="submit" className="primary" disabled={busy || !answer.trim()}>
-                Submit
-              </button>
-              {feedback && <p className={feedback.ok ? "success" : "error"}>{feedback.text}</p>}
-            </form>
-          ) : (
-            <div className="card">
-              <h2>Submit a photo</h2>
-              {photoPreview && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photoPreview}
-                  alt="Preview of the photo just taken"
-                  style={{ width: "100%", borderRadius: 8, marginBottom: 12 }}
-                />
-              )}
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handlePhotoSelected}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                className="primary"
-                disabled={photoBusy}
-                onClick={() => photoInputRef.current?.click()}
-              >
-                {photoBusy ? "Uploading..." : "Take photo"}
-              </button>
-              {pendingPhoto && (
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ marginTop: 8 }}
-                  disabled={photoBusy}
-                  onClick={() => submitPhoto(pendingPhoto.base64, pendingPhoto.mediaType, pendingPhoto.idempotencyKey)}
-                >
-                  {photoBusy ? "Retrying..." : "Retry upload"}
-                </button>
-              )}
-              {photoFeedback && <p className={photoFeedback.ok ? "success" : "error"}>{photoFeedback.text}</p>}
-            </div>
-          )}
-
-          {(!checkpoint.requiresGps || checkpoint.arrived) && (
-            <button className="secondary" onClick={handleSkip} disabled={busy || !skipAvailable}>
-              {skipAvailable ? "Skip (penalty applies)" : `Skip available in ${formatSeconds(remaining)}`}
-            </button>
-          )}
-        </>
-      )}
-
-      <div className="stat-row" style={{ marginTop: 24 }}>
-        <span>Penalties so far</span>
-        <span>+{state.penaltySeconds}s</span>
-      </div>
-      <div className="stat-row">
-        <span>Points so far</span>
-        <span>{state.points}</span>
-      </div>
-    </main>
+          <p className="stop-name">{state.finished ? "Race complete" : (checkpoint?.name ?? "")}</p>
+        </div>
+        <div className={`clock ${stripWarn ? "warn" : ""}`}>{stripClock}</div>
+      </header>
+      <main className="stage">{stage}</main>
+      <footer className="thumb">{thumb}</footer>
+    </div>
   );
 }
