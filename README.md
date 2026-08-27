@@ -210,6 +210,13 @@ PIN, submit, lands on `/team`) at three viewports (390x844, a short
 and - the actual regression check - the "Seal and start" button stays
 fully visible and clickable at the shortest tested height.
 
+`app/page.tsx` (the site root, `/`) got the same treatment - it had been
+untouched since Phase 2 and was telling visitors "No GPS, no photos yet -
+text-answer checkpoints only," which stopped being true back in Phase 3.
+Now shows the logo, real copy, and the two entry buttons ("Play as a
+team," "View leaderboard") through the same skin. Verified both links
+still route correctly and the buttons stay visible at the short viewport.
+
 ## The real route
 
 `challenges/barcelona-route.json` (paired with `challenges/teams.barcelona.json`)
