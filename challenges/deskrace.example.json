@@ -1,0 +1,80 @@
+{
+  "_comment": "TEST DATA ONLY, for Phase 2 'four phones can play a desk race' (doc §13). Self-checked challenge types only (trivia/observation/puzzle/navigation/qr) - photo and interaction types need Phases 4-5 (capture + AI judging) and are not usable yet. Not tied to real GPS coordinates or real Barcelona locations. Time caps are shortened from the doc's 8-minute default so the skip flow can be exercised in a short desk test.",
+  "checkpoints": [
+    {
+      "checkpoint": 1,
+      "name": "Desk checkpoint 1",
+      "latitude": 0,
+      "longitude": 0,
+      "radiusMeters": 0,
+      "clue": "Warm-up.",
+      "challengeType": "trivia",
+      "instruction": "What is the capital of Catalonia?",
+      "correctAnswer": "barcelona",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 30,
+      "skipPenaltySeconds": 60,
+      "timeLimitSeconds": 60
+    },
+    {
+      "checkpoint": 2,
+      "name": "Desk checkpoint 2",
+      "latitude": 0,
+      "longitude": 0,
+      "radiusMeters": 0,
+      "clue": "Look around the room you are sitting in.",
+      "challengeType": "observation",
+      "instruction": "How many legs does a standard table have?",
+      "correctAnswer": "4",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 30,
+      "skipPenaltySeconds": 60,
+      "timeLimitSeconds": 60
+    },
+    {
+      "checkpoint": 3,
+      "name": "Desk checkpoint 3",
+      "latitude": 0,
+      "longitude": 0,
+      "radiusMeters": 0,
+      "clue": "Letters, rearranged.",
+      "challengeType": "puzzle",
+      "instruction": "Spell BARCELONA backwards.",
+      "correctAnswer": "anolecrab",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 30,
+      "skipPenaltySeconds": 60,
+      "timeLimitSeconds": 90
+    },
+    {
+      "checkpoint": 4,
+      "name": "Desk checkpoint 4",
+      "latitude": 0,
+      "longitude": 0,
+      "radiusMeters": 0,
+      "clue": "Between two neighbours.",
+      "challengeType": "navigation",
+      "instruction": "This is checkpoint 4 of 5. Which checkpoint number comes next?",
+      "correctAnswer": "5",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 30,
+      "skipPenaltySeconds": 60,
+      "timeLimitSeconds": 60
+    },
+    {
+      "checkpoint": 5,
+      "name": "Desk checkpoint 5",
+      "latitude": 0,
+      "longitude": 0,
+      "radiusMeters": 0,
+      "clue": "The finish line.",
+      "challengeType": "qr",
+      "instruction": "Type the code word: DESKRACE",
+      "correctAnswer": "deskrace",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 30,
+      "skipPenaltySeconds": 60,
+      "timeLimitSeconds": 45
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "_comment": "TEST DATA ONLY. Two checkpoints are taken verbatim from the concept doc's own examples (the public clock and the gargoyle). The other two are placeholders invented to exercise trivia/puzzle challenge types in tests. None of this has been walked or verified in Barcelona - do not use it for a real event before completing the operational checklist in the doc (walk the loop, check GPS accuracy, opening hours, safety plan).",
+  "checkpoints": [
+    {
+      "checkpoint": 1,
+      "name": "Placa Reial",
+      "latitude": 41.3802,
+      "longitude": 2.1745,
+      "radiusMeters": 70,
+      "clue": "Find the place where the city watches the world go by.",
+      "challengeType": "photo",
+      "instruction": "Photograph a public clock showing a time later than 15:00.",
+      "aiCriteria": ["public clock", "visible time later than 15:00", "outdoors"],
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 120,
+      "skipPenaltySeconds": 300,
+      "timeLimitSeconds": 480
+    },
+    {
+      "checkpoint": 2,
+      "name": "Carrer del Bisbe",
+      "latitude": 41.3833,
+      "longitude": 2.1755,
+      "radiusMeters": 60,
+      "clue": "PLACEHOLDER - needs a real trivia clue for this stop.",
+      "challengeType": "trivia",
+      "instruction": "PLACEHOLDER - find the year this building was inaugurated.",
+      "correctAnswer": "1928",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 120,
+      "skipPenaltySeconds": 300,
+      "timeLimitSeconds": 480
+    },
+    {
+      "checkpoint": 3,
+      "name": "PLACEHOLDER - puzzle stop",
+      "latitude": 41.3845,
+      "longitude": 2.1758,
+      "radiusMeters": 70,
+      "clue": "PLACEHOLDER - needs a real puzzle clue for this stop.",
+      "challengeType": "puzzle",
+      "instruction": "PLACEHOLDER - solve the puzzle presented at the location.",
+      "correctAnswer": "PLACEHOLDER",
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 120,
+      "skipPenaltySeconds": 300,
+      "timeLimitSeconds": 480
+    },
+    {
+      "checkpoint": 4,
+      "name": "Gothic Quarter",
+      "latitude": 41.3839,
+      "longitude": 2.1761,
+      "radiusMeters": 90,
+      "clue": "Find the creature watching over the narrow street.",
+      "challengeType": "photo",
+      "instruction": "Photograph the gargoyle.",
+      "aiCriteria": ["stone gargoyle", "mounted on building", "outdoors"],
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 120,
+      "skipPenaltySeconds": 300,
+      "timeLimitSeconds": 480
+    }
+  ]
+}

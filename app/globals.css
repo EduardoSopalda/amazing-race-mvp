@@ -1,0 +1,162 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #12141a;
+  color: #f2f2f2;
+  min-height: 100vh;
+}
+
+main {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 4px;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+  color: #b9bdc8;
+  font-weight: 600;
+}
+
+p {
+  line-height: 1.5;
+}
+
+a {
+  color: #6fb1ff;
+}
+
+.card {
+  background: #1c1f28;
+  border: 1px solid #2a2e3a;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+label {
+  font-size: 0.85rem;
+  color: #b9bdc8;
+}
+
+select,
+input[type="text"],
+input[type="tel"] {
+  font-size: 1rem;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #3a3f4d;
+  background: #12141a;
+  color: #f2f2f2;
+}
+
+button {
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 14px 18px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+}
+
+button.primary {
+  background: #d4a017;
+  color: #14151a;
+}
+
+button.secondary {
+  background: transparent;
+  color: #f2f2f2;
+  border: 1px solid #3a3f4d;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #2a2e3a;
+  color: #d0d4de;
+}
+
+.error {
+  color: #ff8a8a;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+.success {
+  color: #7be0a0;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 8px 0;
+}
+
+.clock.warn {
+  color: #d4a017;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid #2a2e3a;
+  font-size: 0.9rem;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #b9bdc8;
+  padding: 4px 0;
+}
