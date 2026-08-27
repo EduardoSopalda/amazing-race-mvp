@@ -3,6 +3,7 @@ import { checkpointRequiresGps, distanceMeters } from "./geofence";
 import { adjustedTimeSeconds, rankLeaderboard } from "./scoring";
 import {
   SELF_CHECKED_TYPES,
+  type CachedSubmission,
   type Checkpoint,
   type GameEvent,
   type GpsFix,
@@ -235,6 +236,53 @@ export class RaceEngine {
     return { accepted, distanceMeters: distance, accuracyMeters: fix.accuracyMeters, reason };
   }
 
+  /**
+   * A retried request (Phase 7's backoff, or a manual "Retry upload") is the
+   * same logical attempt, not a fresh one - without this, a retry that
+   * actually landed the first time would double-advance a checkpoint,
+   * double-apply a penalty, or (for photos, via checkIdempotentSubmission)
+   * trigger a second paid AI judging call. Matching is on the key alone
+   * (a fresh crypto.randomUUID() per logical attempt, generated client-side)
+   * rather than the team's current checkpoint - deliberately, since the
+   * retry that matters most is exactly the one whose original request
+   * already advanced (or finished) the team, so "current checkpoint" has
+   * moved on by the time the retry arrives. A genuinely new attempt (the
+   * team got it wrong and tries again) always carries a different key, so
+   * it is never mistaken for a duplicate. Concurrent overlapping requests -
+   * as opposed to sequential retries - can still both miss the cache before
+   * either has written it; acceptable for a friendly one-off event, not
+   * fixed here.
+   */
+  private findCachedSubmission(state: TeamState, idempotencyKey: string | undefined): CachedSubmission | undefined {
+    if (!idempotencyKey) return undefined;
+    const cached = state.lastSubmission;
+    if (cached && cached.key === idempotencyKey) return cached;
+    return undefined;
+  }
+
+  private recordSubmission(
+    state: TeamState,
+    checkpointNumber: number,
+    idempotencyKey: string | undefined,
+    result: SubmitResult,
+    extra: { photoUrl?: string; extra?: Record<string, unknown> } = {}
+  ): void {
+    if (!idempotencyKey) return;
+    state.lastSubmission = { checkpoint: checkpointNumber, key: idempotencyKey, result, ...extra };
+  }
+
+  /**
+   * Public entry point for a caller that needs to skip expensive work - the
+   * photo route's paid AI call - before it would otherwise reach
+   * submitJudgement. Everywhere else, submitAnswer/submitJudgement/skip
+   * already check internally.
+   */
+  checkIdempotentSubmission(teamId: string, idempotencyKey: string | undefined): CachedSubmission | undefined {
+    if (!idempotencyKey) return undefined;
+    const state = this.requireState(teamId);
+    return this.findCachedSubmission(state, idempotencyKey);
+  }
+
   private recordFailedAttempt(
     state: TeamState,
     checkpoint: Checkpoint,
@@ -261,8 +309,12 @@ export class RaceEngine {
    * through submitJudgement instead, since their verdict comes from AI or an
    * organiser rather than exact-match text.
    */
-  submitAnswer(teamId: string, answer: string): SubmitResult {
+  submitAnswer(teamId: string, answer: string, idempotencyKey?: string): SubmitResult {
     const state = this.requireState(teamId);
+    // Checked before the "already finished" guard below: a retry of the
+    // submission that finished the race must replay that result, not throw.
+    const cached = this.findCachedSubmission(state, idempotencyKey);
+    if (cached) return cached.result;
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
     this.requireArrived(state, checkpoint);
@@ -278,7 +330,9 @@ export class RaceEngine {
     this.log({ type: "answer_submitted", teamId, checkpoint: checkpoint.checkpoint, data: { answer } });
 
     const isCorrect = normaliseAnswer(answer) === normaliseAnswer(checkpoint.correctAnswer);
-    return this.resolveAttempt(state, checkpoint, isCorrect ? "correct" : "incorrect");
+    const result = this.resolveAttempt(state, checkpoint, isCorrect ? "correct" : "incorrect");
+    this.recordSubmission(state, checkpoint.checkpoint, idempotencyKey, result);
+    return result;
   }
 
   /**
@@ -290,8 +344,14 @@ export class RaceEngine {
    * resubmit a clearer photo at no cost, same as a real organiser waving
    * them to try again.
    */
-  submitJudgement(teamId: string, verdict: Verdict, options: { reason?: string; photoUrl?: string } = {}): SubmitResult {
+  submitJudgement(
+    teamId: string,
+    verdict: Verdict,
+    options: { reason?: string; photoUrl?: string; idempotencyKey?: string; extra?: Record<string, unknown> } = {}
+  ): SubmitResult {
     const state = this.requireState(teamId);
+    const cached = this.findCachedSubmission(state, options.idempotencyKey);
+    if (cached) return cached.result;
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
     this.requireArrived(state, checkpoint);
@@ -308,7 +368,12 @@ export class RaceEngine {
       data: { verdict, reason: options.reason, photoUrl: options.photoUrl },
     });
 
-    return this.resolveAttempt(state, checkpoint, verdict, options);
+    const result = this.resolveAttempt(state, checkpoint, verdict, options);
+    this.recordSubmission(state, checkpoint.checkpoint, options.idempotencyKey, result, {
+      photoUrl: options.photoUrl,
+      extra: options.extra,
+    });
+    return result;
   }
 
   private resolveAttempt(
@@ -378,8 +443,10 @@ export class RaceEngine {
   }
 
   /** Skip the current checkpoint after the time cap, for a larger penalty (doc §7). */
-  skip(teamId: string): SubmitResult {
+  skip(teamId: string, idempotencyKey?: string): SubmitResult {
     const state = this.requireState(teamId);
+    const cached = this.findCachedSubmission(state, idempotencyKey);
+    if (cached) return cached.result;
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
     this.requireArrived(state, checkpoint);
@@ -398,8 +465,10 @@ export class RaceEngine {
       data: { penaltySeconds: checkpoint.skipPenaltySeconds },
     });
 
-    const result = this.advance(teamId, checkpoint, 0);
-    return { ...result, outcome: "skipped", penaltySeconds: checkpoint.skipPenaltySeconds };
+    const advanced = this.advance(teamId, checkpoint, 0);
+    const result: SubmitResult = { ...advanced, outcome: "skipped", penaltySeconds: checkpoint.skipPenaltySeconds };
+    this.recordSubmission(state, checkpoint.checkpoint, idempotencyKey, result);
+    return result;
   }
 
   /**

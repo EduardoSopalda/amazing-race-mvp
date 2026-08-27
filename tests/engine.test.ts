@@ -509,3 +509,174 @@ describe("RaceEngine - per-team checkpoint overrides and host penalties", () => 
     expect(engine.events.filter((e) => e.type === "penalty_applied")).toHaveLength(2);
   });
 });
+
+describe("RaceEngine - idempotent submissions (Phase 7: retry safety)", () => {
+  it("submitAnswer: a retried request with the same key replays the result instead of re-scoring", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(config, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const first = engine.submitAnswer("red", "1928", "key-a");
+    expect(first.outcome).toBe("correct");
+    expect(engine.currentCheckpoint("red")?.checkpoint).toBe(2);
+
+    // Same key resubmitted (simulating a lost response + client retry) must
+    // not be scored against checkpoint 2 - it replays the original result.
+    const replay = engine.submitAnswer("red", "1928", "key-a");
+    expect(replay).toEqual(first);
+    expect(engine.currentCheckpoint("red")?.checkpoint).toBe(2);
+    expect(engine.events.filter((e) => e.type === "answer_submitted")).toHaveLength(1);
+  });
+
+  it("submitAnswer: a different key is treated as a genuinely new attempt", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(config, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const wrong = engine.submitAnswer("red", "1927", "key-a");
+    expect(wrong.outcome).toBe("incorrect");
+    expect(engine.progress("red").penaltySeconds).toBe(120);
+
+    // A fresh attempt (new key) after getting it wrong is scored normally,
+    // not treated as a duplicate of the first.
+    const right = engine.submitAnswer("red", "1928", "key-b");
+    expect(right.outcome).toBe("correct");
+    expect(engine.progress("red").penaltySeconds).toBe(120); // unchanged - no second penalty
+  });
+
+  it("submitJudgement: replays a cached verdict without re-applying its penalty or points", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(photoConfigForIdempotency(), makeTeams(), clock);
+    engine.startTeam("red");
+
+    const first = engine.submitJudgement("red", "incorrect", { reason: "no match", idempotencyKey: "photo-key-1" });
+    expect(first.outcome).toBe("incorrect");
+    expect(engine.progress("red").penaltySeconds).toBe(30);
+
+    const replay = engine.submitJudgement("red", "incorrect", { reason: "no match", idempotencyKey: "photo-key-1" });
+    expect(replay).toEqual(first);
+    expect(engine.progress("red").penaltySeconds).toBe(30); // not doubled
+  });
+
+  it("checkIdempotentSubmission lets a caller (the photo route) detect a duplicate before paying for AI judging again", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(photoConfigForIdempotency(), makeTeams(), clock);
+    engine.startTeam("red");
+
+    expect(engine.checkIdempotentSubmission("red", "photo-key-1")).toBeUndefined();
+    const result = engine.submitJudgement("red", "correct", {
+      reason: "clear",
+      idempotencyKey: "photo-key-1",
+      extra: { judgement: { verdict: "correct", confidence: 0.9, reason: "clear" } },
+    });
+
+    // The cache lookup is by key alone, deliberately - the retry that matters
+    // most is exactly this one, where the original request already advanced
+    // the team to checkpoint 2 before its response was lost.
+    expect(engine.currentCheckpoint("red")?.checkpoint).toBe(2);
+    const cached = engine.checkIdempotentSubmission("red", "photo-key-1");
+    expect(cached?.result).toEqual(result);
+    expect(cached?.extra?.judgement).toEqual({ verdict: "correct", confidence: 0.9, reason: "clear" });
+
+    // A different key (a genuinely new submission on checkpoint 2) is not cached.
+    expect(engine.checkIdempotentSubmission("red", "some-other-key")).toBeUndefined();
+  });
+
+  it("a retried key still replays correctly when the original submission finished the race", () => {
+    const clock = createFakeClock(0);
+    const singleCheckpoint: RaceConfig = {
+      checkpoints: [
+        {
+          checkpoint: 1,
+          name: "Only stop",
+          latitude: 0,
+          longitude: 0,
+          radiusMeters: 0,
+          clue: "clue",
+          challengeType: "trivia",
+          instruction: "answer",
+          correctAnswer: "yes",
+          rewardPoints: 100,
+          wrongPenaltySeconds: 120,
+          skipPenaltySeconds: 300,
+          timeLimitSeconds: 480,
+        },
+      ],
+    };
+    const engine = new RaceEngine(singleCheckpoint, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const first = engine.submitAnswer("red", "yes", "finish-key");
+    expect(first.finished).toBe(true);
+    expect(engine.currentCheckpoint("red")).toBeNull();
+
+    // The client never saw the response and retries with the same key. This
+    // must replay the finish, not throw "already finished".
+    const replay = engine.submitAnswer("red", "yes", "finish-key");
+    expect(replay).toEqual(first);
+  });
+
+  it("skip: a retried key does not double-apply the skip penalty", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(config, makeTeams(), clock);
+    engine.startTeam("red");
+    clock.advance(480_000); // past checkpoint 1's time cap
+
+    const first = engine.skip("red", "skip-key-1");
+    expect(first.outcome).toBe("skipped");
+    expect(engine.progress("red").skipSeconds).toBe(300);
+
+    const replay = engine.skip("red", "skip-key-1");
+    expect(replay).toEqual(first);
+    expect(engine.progress("red").skipSeconds).toBe(300); // not doubled
+  });
+
+  it("an admin action with no idempotency key is never treated as cached, and never pollutes the cache", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(photoConfigForIdempotency(), makeTeams(), clock);
+    engine.startTeam("red");
+
+    engine.submitJudgement("red", "incorrect", { reason: "organiser call" });
+    expect(engine.progress("red").penaltySeconds).toBe(30);
+    // A second override with no key is applied fresh, not replayed.
+    engine.submitJudgement("red", "incorrect", { reason: "organiser call again" });
+    expect(engine.progress("red").penaltySeconds).toBe(60);
+  });
+
+  function photoConfigForIdempotency(): RaceConfig {
+    return {
+      checkpoints: [
+        {
+          checkpoint: 1,
+          name: "Photo stop",
+          latitude: 0,
+          longitude: 0,
+          radiusMeters: 0,
+          clue: "clue",
+          challengeType: "photo",
+          instruction: "photograph the thing",
+          aiCriteria: ["the thing"],
+          rewardPoints: 100,
+          wrongPenaltySeconds: 30,
+          skipPenaltySeconds: 60,
+          timeLimitSeconds: 480,
+        },
+        {
+          checkpoint: 2,
+          name: "Second stop",
+          latitude: 0,
+          longitude: 0,
+          radiusMeters: 0,
+          clue: "clue two",
+          challengeType: "trivia",
+          instruction: "answer",
+          correctAnswer: "yes",
+          rewardPoints: 100,
+          wrongPenaltySeconds: 30,
+          skipPenaltySeconds: 60,
+          timeLimitSeconds: 480,
+        },
+      ],
+    };
+  }
+});

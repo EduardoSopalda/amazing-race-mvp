@@ -92,6 +92,7 @@ export interface TeamState {
   skipSeconds: number;
   points: number;
   attempts: CheckpointAttempt[];
+  lastSubmission?: CachedSubmission;
 }
 
 export type GameEventType =
@@ -137,6 +138,23 @@ export interface SubmitResult {
   pointsAwarded: number;
   nextCheckpoint: Checkpoint | null;
   finished: boolean;
+}
+
+/**
+ * The result of the most recent submitAnswer/submitJudgement/skip call for a
+ * team, keyed by the checkpoint it was submitted against and a client-chosen
+ * idempotency key - lets a retried request (Phase 7's backoff, or a manual
+ * "Retry upload") replay the original outcome instead of re-running game
+ * logic a second time. `extra` is opaque to the engine: a caller (e.g. the
+ * photo route) can stash anything it needs to replay verbatim, such as the
+ * AI judgement object.
+ */
+export interface CachedSubmission {
+  checkpoint: number;
+  key: string;
+  result: SubmitResult;
+  photoUrl?: string;
+  extra?: Record<string, unknown>;
 }
 
 export interface LeaderboardEntry {

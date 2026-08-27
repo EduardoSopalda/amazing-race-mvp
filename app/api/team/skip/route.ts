@@ -9,9 +9,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
 
+  let body: { idempotencyKey?: unknown } = {};
+  try {
+    body = await request.json();
+  } catch {
+    // No body is fine - idempotencyKey is optional.
+  }
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
+
   return withEngine((engine) => {
     try {
-      const result = engine.skip(teamId);
+      const result = engine.skip(teamId, idempotencyKey);
       return NextResponse.json({ result, state: buildTeamStatePayload(engine, teamId) });
     } catch (err) {
       return NextResponse.json({ error: (err as Error).message }, { status: 400 });

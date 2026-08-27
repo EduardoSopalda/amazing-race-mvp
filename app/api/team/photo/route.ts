@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
 
-  let body: { imageBase64?: unknown; mediaType?: unknown };
+  let body: { imageBase64?: unknown; mediaType?: unknown; idempotencyKey?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
 
   const imageBase64 = typeof body.imageBase64 === "string" ? body.imageBase64 : null;
   const mediaType = typeof body.mediaType === "string" ? body.mediaType : null;
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
   if (!imageBase64 || !mediaType) {
     return NextResponse.json({ error: "imageBase64 and mediaType are required" }, { status: 400 });
   }
@@ -62,6 +63,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A retried request for the exact same submission (Phase 7's backoff, or
+    // a manual "Retry upload") replays the original outcome instead of
+    // paying for a second AI judging call on a photo already judged.
+    const cached = engine.checkIdempotentSubmission(teamId, idempotencyKey);
+    if (cached) {
+      return NextResponse.json({
+        result: cached.result,
+        judgement: cached.extra?.judgement ?? null,
+        photoUrl: cached.photoUrl ?? null,
+        state: buildTeamStatePayload(engine, teamId),
+      });
+    }
+
     let judgement;
     try {
       judgement = await judgePhoto({
@@ -82,6 +96,8 @@ export async function POST(request: NextRequest) {
       const result = engine.submitJudgement(teamId, judgement.verdict, {
         reason: judgement.reason,
         photoUrl: photoUrl ?? undefined,
+        idempotencyKey,
+        extra: { judgement },
       });
       return NextResponse.json({
         result,

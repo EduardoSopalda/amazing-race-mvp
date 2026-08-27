@@ -67,11 +67,40 @@ anywhere.
   attempts shows it, preserves the photo, and a manual retry after
   "signal returns" completes normally.
 
-Still not built: the rest of Phase 7 (duplicate-fix handling, GPS drift
-mitigation, poor-signal detection during GPS reporting itself) and Phase 8
-polish (a live map, richer challenge types, course close). See "What's not
-built yet" below for exactly what that leaves unautomated on the real
-route.
+  On top of that: retrying only helps if a retry can't double-count. Every
+  `submit`/`skip`/`photo` call now carries a client-generated
+  `idempotencyKey` (one `crypto.randomUUID()` per logical attempt, reused
+  across that attempt's automatic retries and, for photos, its manual
+  "Retry upload" too). The server caches the last submission per team by
+  that key: a retry of a request that actually landed - the response was
+  just lost in transit - replays the original result instead of
+  re-scoring, double-advancing, or (for photos) paying for a second AI
+  judging call. A genuinely new attempt always carries a fresh key, so it
+  is never mistaken for a duplicate. This specifically covers the case
+  that matters most and is easy to get wrong: a submission that *advances
+  or finishes the checkpoint* before its response is lost, where the
+  team's "current checkpoint" has already moved on by the time the retry
+  arrives - covered by both a unit test and a live Playwright check (see
+  below). Concurrent overlapping requests, as opposed to sequential
+  retries, can still both miss the cache before either has written it -
+  not fixed here, and unlikely to matter for four teams on one event.
+
+  Verified two ways: `tests/engine.test.ts` covers submitAnswer,
+  submitJudgement, and skip replaying a cached result instead of
+  re-applying penalties/points, including the specific "the submission
+  that finished the race gets retried" case. Live, with the AI judging
+  call stubbed to log every real invocation: a Playwright run let a photo
+  submission actually reach and finish on the server, then used
+  `route.fetch()` + `route.abort()` to simulate the client losing that
+  response before the real client-side retry fired - the server log
+  showed exactly one AI judging call despite two requests reaching it, and
+  the team finished with 600 points, not 700.
+
+Still not built: the rest of Phase 7 (GPS drift mitigation, poor-signal
+detection during GPS reporting itself, concurrent-request dedup) and
+Phase 8 polish (a live map, richer challenge types, course close). See
+"What's not built yet" below for exactly what that leaves unautomated on
+the real route.
 
 ## The real route
 
@@ -303,15 +332,19 @@ there's no single list of every ambiguous submission across all four teams
 to work through), and a "start the race" button for a synchronised
 staggered start.
 
-What Phase 7 still needs beyond the retry/backoff hardening already done:
-a **true offline queue** - the current retry logic covers a connection that
-comes back within a few seconds (three attempts, a few hundred ms to a few
-seconds apart); it does not queue a submission while the phone has *no*
-signal at all for longer than that, or survive a page reload/app close
-mid-upload. Also: duplicate-submission dedup at the server (a double-tap is
-currently only prevented client-side, by disabling the button while
-`busy`), and GPS drift/poor-signal detection beyond the existing accuracy
-gate.
+What Phase 7 still needs beyond the retry/backoff hardening and
+per-submission dedup already done: a **true offline queue** - the current
+retry logic covers a connection that comes back within a few seconds
+(three attempts, a few hundred ms to a few seconds apart); it does not
+queue a submission while the phone has *no* signal at all for longer than
+that, or survive a page reload/app close mid-upload. Also: a genuine
+*double-tap* (two clicks of the same button, not a network retry) is still
+only prevented client-side, by disabling the button while `busy` - the
+idempotency key covers the server retrying the same logical request, not
+two independent requests each with their own key; concurrent overlapping
+requests can still both miss the server-side cache before either has
+written it. And GPS drift/poor-signal detection beyond the existing
+accuracy gate.
 
 Also still missing: branching Detours (a real choice between two
 challenges), multi-photo checkpoints (submit several photos as one gated

@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
 
-  let body: { answer?: unknown };
+  let body: { answer?: unknown; idempotencyKey?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -19,10 +19,11 @@ export async function POST(request: NextRequest) {
   if (!answer) {
     return NextResponse.json({ error: "answer is required" }, { status: 400 });
   }
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
 
   return withEngine((engine) => {
     try {
-      const result = engine.submitAnswer(teamId, answer);
+      const result = engine.submitAnswer(teamId, answer, idempotencyKey);
       return NextResponse.json({ result, state: buildTeamStatePayload(engine, teamId) });
     } catch (err) {
       return NextResponse.json({ error: (err as Error).message }, { status: 400 });

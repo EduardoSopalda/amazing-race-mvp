@@ -207,7 +207,9 @@ export default function TeamPage() {
   // Kept only while an upload hasn't actually reached the server (network
   // failure or 5xx after retries) - lets "Retry upload" resend without
   // making the team retake and recompose the photo.
-  const [pendingPhoto, setPendingPhoto] = useState<{ base64: string; mediaType: "image/jpeg" } | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<{ base64: string; mediaType: "image/jpeg"; idempotencyKey: string } | null>(
+    null
+  );
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Resizing onto a canvas and re-exporting as JPEG both compresses the
@@ -230,16 +232,21 @@ export default function TeamPage() {
     return { base64, mediaType: "image/jpeg", dataUrl };
   }
 
-  async function submitPhoto(base64: string, mediaType: "image/jpeg") {
+  async function submitPhoto(base64: string, mediaType: "image/jpeg", idempotencyKey: string) {
     setPhotoFeedback(null);
     setPhotoBusy(true);
     try {
-      const { ok, status, data } = await postJsonWithRetry("/api/team/photo", { imageBase64: base64, mediaType });
+      const { ok, status, data } = await postJsonWithRetry("/api/team/photo", {
+        imageBase64: base64,
+        mediaType,
+        idempotencyKey,
+      });
 
       if (status === 0) {
-        // Every attempt failed to get a real response - keep the photo so
-        // "Retry upload" can resend it once the connection recovers.
-        setPendingPhoto({ base64, mediaType });
+        // Every attempt failed to get a real response - keep the photo (and
+        // its key, so a resend is recognised server-side as the same
+        // attempt rather than a second AI judging call) for "Retry upload".
+        setPendingPhoto({ base64, mediaType, idempotencyKey });
         setPhotoFeedback({ ok: false, text: "Upload failed - check your connection, then tap Retry upload." });
         return;
       }
@@ -276,7 +283,7 @@ export default function TeamPage() {
     try {
       const { base64, mediaType, dataUrl } = await compressImage(file);
       setPhotoPreview(dataUrl);
-      await submitPhoto(base64, mediaType);
+      await submitPhoto(base64, mediaType, crypto.randomUUID());
     } catch (err) {
       setPhotoFeedback({ ok: false, text: (err as Error).message });
     } finally {
@@ -290,7 +297,10 @@ export default function TeamPage() {
     setBusy(true);
     setFeedback(null);
     try {
-      const { ok, status, data } = await postJsonWithRetry("/api/team/submit", { answer });
+      const { ok, status, data } = await postJsonWithRetry("/api/team/submit", {
+        answer,
+        idempotencyKey: crypto.randomUUID(),
+      });
       if (status === 0) {
         setFeedback({ ok: false, text: "Could not reach the race server - check your connection and try again." });
         return;
@@ -317,7 +327,9 @@ export default function TeamPage() {
     setBusy(true);
     setFeedback(null);
     try {
-      const { ok, status, data } = await postJsonWithRetry("/api/team/skip", {});
+      const { ok, status, data } = await postJsonWithRetry("/api/team/skip", {
+        idempotencyKey: crypto.randomUUID(),
+      });
       if (status === 0) {
         setFeedback({ ok: false, text: "Could not reach the race server - check your connection and try again." });
         return;
@@ -467,7 +479,7 @@ export default function TeamPage() {
                   className="secondary"
                   style={{ marginTop: 8 }}
                   disabled={photoBusy}
-                  onClick={() => submitPhoto(pendingPhoto.base64, pendingPhoto.mediaType)}
+                  onClick={() => submitPhoto(pendingPhoto.base64, pendingPhoto.mediaType, pendingPhoto.idempotencyKey)}
                 >
                   {photoBusy ? "Retrying..." : "Retry upload"}
                 </button>
