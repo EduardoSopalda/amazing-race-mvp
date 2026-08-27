@@ -10,7 +10,7 @@ const config: RaceConfig = {
       name: "Stop 1 (trivia)",
       latitude: 0,
       longitude: 0,
-      radiusMeters: 50,
+      radiusMeters: 0, // no GPS gate - this suite is deliberately GPS-free (see the "GPS geofencing" suite below)
       clue: "clue one",
       challengeType: "trivia",
       instruction: "answer the trivia",
@@ -25,7 +25,7 @@ const config: RaceConfig = {
       name: "Stop 2 (photo)",
       latitude: 0,
       longitude: 0,
-      radiusMeters: 50,
+      radiusMeters: 0, // no GPS gate - this suite is deliberately GPS-free (see the "GPS geofencing" suite below)
       clue: "clue two",
       challengeType: "photo",
       instruction: "photograph the thing",
@@ -40,7 +40,7 @@ const config: RaceConfig = {
       name: "Stop 3 (puzzle)",
       latitude: 0,
       longitude: 0,
-      radiusMeters: 50,
+      radiusMeters: 0, // no GPS gate - this suite is deliberately GPS-free (see the "GPS geofencing" suite below)
       clue: "clue three",
       challengeType: "puzzle",
       instruction: "solve it",
@@ -170,7 +170,7 @@ describe("RaceEngine - a fully scripted race, no GPS or photos", () => {
           name: "Only stop",
           latitude: 0,
           longitude: 0,
-          radiusMeters: 50,
+          radiusMeters: 0, // no GPS gate - this suite is deliberately GPS-free (see the "GPS geofencing" suite below)
           clue: "clue",
           challengeType: "trivia",
           instruction: "answer",
@@ -198,5 +198,130 @@ describe("RaceEngine - a fully scripted race, no GPS or photos", () => {
     // blue: adjusted = 10 + 0 = 10s, 100 points
     // diff = 110s > 30s window, so pure time ordering applies: blue first.
     expect(board[0]!.teamId).toBe("blue");
+  });
+});
+
+describe("RaceEngine - GPS geofencing (Phase 3)", () => {
+  // Placa Reial, Barcelona. ~80m away is roughly Placa George Orwell.
+  const PLACA_REIAL = { latitude: 41.3802, longitude: 2.1745 };
+  const NEARBY_80M = { latitude: 41.38065, longitude: 2.17565 };
+
+  const gpsConfig: RaceConfig = {
+    checkpoints: [
+      {
+        checkpoint: 1,
+        name: "Placa Reial",
+        latitude: PLACA_REIAL.latitude,
+        longitude: PLACA_REIAL.longitude,
+        radiusMeters: 70,
+        clue: "Find the place where the city watches the world go by.",
+        challengeType: "trivia",
+        instruction: "What year was the central fountain installed?",
+        correctAnswer: "1980",
+        rewardPoints: 100,
+        wrongPenaltySeconds: 120,
+        skipPenaltySeconds: 300,
+        timeLimitSeconds: 480,
+      },
+      {
+        checkpoint: 2,
+        name: "Second stop",
+        latitude: PLACA_REIAL.latitude,
+        longitude: PLACA_REIAL.longitude,
+        radiusMeters: 70,
+        clue: "clue two",
+        challengeType: "trivia",
+        instruction: "answer",
+        correctAnswer: "yes",
+        rewardPoints: 100,
+        wrongPenaltySeconds: 120,
+        skipPenaltySeconds: 300,
+        timeLimitSeconds: 480,
+      },
+    ],
+  };
+
+  it("starts locked, rejects a fix with poor accuracy, then unlocks on a good fix inside the fence", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(gpsConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    // Locked immediately after starting - no GPS confirmation yet.
+    expect(engine.currentUnlockedAtMs("red")).toBeNull();
+    expect(() => engine.submitAnswer("red", "1980")).toThrow(/has not been reached yet/);
+
+    // Standing right on top of it, but the fix's accuracy is worse than the
+    // 70m fence radius - doc §4: refuse the unlock regardless of distance.
+    const poorFix = engine.reportPosition("red", { ...PLACA_REIAL, accuracyMeters: 150 });
+    expect(poorFix.accepted).toBe(false);
+    expect(poorFix.reason).toBe("poor_accuracy");
+    expect(engine.currentUnlockedAtMs("red")).toBeNull();
+
+    // Good accuracy but genuinely somewhere else entirely (Sagrada Familia).
+    const farFix = engine.reportPosition("red", { latitude: 41.4036, longitude: 2.1744, accuracyMeters: 10 });
+    expect(farFix.accepted).toBe(false);
+    expect(farFix.reason).toBe("too_far");
+    expect(farFix.distanceMeters).toBeGreaterThan(70);
+
+    // Good accuracy, inside the fence: unlocks.
+    const goodFix = engine.reportPosition("red", { ...PLACA_REIAL, accuracyMeters: 20 });
+    expect(goodFix.accepted).toBe(true);
+    expect(engine.currentUnlockedAtMs("red")).not.toBeNull();
+
+    // Now the challenge can be answered.
+    const result = engine.submitAnswer("red", "1980");
+    expect(result.outcome).toBe("correct");
+    expect(result.nextCheckpoint?.checkpoint).toBe(2);
+
+    // The dispute log has every GPS event, accepted or not (doc §4, §7).
+    const gpsEvents = engine.events.filter((e) => e.type === "gps_reported");
+    expect(gpsEvents).toHaveLength(3);
+    expect(gpsEvents[0]!.data?.accepted).toBe(false);
+    expect(gpsEvents[2]!.data?.accepted).toBe(true);
+  });
+
+  it("accepts a fix within radius using a real second coordinate, ~80m away", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(gpsConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const fix = engine.reportPosition("red", { ...NEARBY_80M, accuracyMeters: 15 });
+    // 80m is just outside the 70m fence - a real haversine distance, not a stub.
+    expect(fix.distanceMeters).toBeGreaterThan(70);
+    expect(fix.accepted).toBe(false);
+    expect(fix.reason).toBe("too_far");
+  });
+
+  it("blocks skip until arrived, and the time cap only starts counting from arrival", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(gpsConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    // Not arrived yet: skip is blocked no matter how much time passes before arrival.
+    clock.advance(500_000);
+    expect(() => engine.skip("red")).toThrow(/has not been reached yet/);
+    expect(engine.canSkip("red")).toBe(false);
+
+    // Arrival starts the challenge clock at zero - skip is not immediately available.
+    engine.reportPosition("red", { ...PLACA_REIAL, accuracyMeters: 10 });
+    expect(engine.canSkip("red")).toBe(false);
+    expect(() => engine.skip("red")).toThrow(/cannot be skipped/);
+
+    // Only after the 480s time cap, counted from arrival, can they skip.
+    clock.advance(480_000);
+    expect(engine.canSkip("red")).toBe(true);
+    const skipped = engine.skip("red");
+    expect(skipped.outcome).toBe("skipped");
+  });
+
+  it("manualUnlock forces a checkpoint open exactly like a successful GPS fix", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(gpsConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    expect(engine.currentUnlockedAtMs("red")).toBeNull();
+    engine.manualUnlock("red");
+    expect(engine.currentUnlockedAtMs("red")).not.toBeNull();
+    expect(() => engine.submitAnswer("red", "1980")).not.toThrow();
   });
 });

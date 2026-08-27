@@ -1,4 +1,5 @@
 import type { RaceEngine } from "@/game/engine";
+import { checkpointRequiresGps } from "@/game/geofence";
 import { SELF_CHECKED_TYPES } from "@/game/types";
 
 export interface TeamStatePayload {
@@ -19,6 +20,8 @@ export interface TeamStatePayload {
     instruction: string;
     challengeType: string;
     selfChecked: boolean;
+    requiresGps: boolean;
+    arrived: boolean;
     unlockedAtMs: number | null;
     timeLimitSeconds: number;
     canSkip: boolean;
@@ -72,6 +75,8 @@ export function buildTeamStatePayload(engine: RaceEngine, teamId: string): TeamS
             instruction: activeCheckpoint.instruction,
             challengeType: activeCheckpoint.challengeType,
             selfChecked: SELF_CHECKED_TYPES.has(activeCheckpoint.challengeType),
+            requiresGps: checkpointRequiresGps(activeCheckpoint),
+            arrived: engine.currentUnlockedAtMs(teamId) !== null,
             unlockedAtMs: engine.currentUnlockedAtMs(teamId),
             timeLimitSeconds: activeCheckpoint.timeLimitSeconds,
             canSkip: engine.canSkip(teamId),

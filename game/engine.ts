@@ -1,9 +1,13 @@
 import { systemClock, type Clock } from "./clock";
+import { checkpointRequiresGps, distanceMeters } from "./geofence";
 import { adjustedTimeSeconds, rankLeaderboard } from "./scoring";
 import {
   SELF_CHECKED_TYPES,
   type Checkpoint,
   type GameEvent,
+  type GpsFix,
+  type GpsFixResult,
+  type GpsRejectReason,
   type LeaderboardEntry,
   type RaceConfig,
   type SerializedRace,
@@ -18,10 +22,10 @@ function normaliseAnswer(value: string): string {
 }
 
 /**
- * The race engine. Phase 1 scope only (doc §13): teams, PINs, checkpoints,
- * clues, scoring, penalties, server clock. No GPS and no photo capture -
- * geofence unlocking and AI photo judging are separate phases that call into
- * this same state machine (unlockCheckpoint / submitJudgement) once built.
+ * The race engine (doc §13 phases 1-3): teams, PINs, checkpoints, scoring,
+ * penalties, server clock, and GPS geofenced unlocking. Photo capture and AI
+ * judging are still separate phases that call into this same state machine
+ * (submitJudgement) once built.
  */
 export class RaceEngine {
   private readonly config: RaceConfig;
@@ -89,12 +93,15 @@ export class RaceEngine {
       throw new Error(`Team "${teamId}" has already started`);
     }
     const now = this.clock.now();
+    const first = this.config.checkpoints[0]!;
     const state: TeamState = {
       teamId,
       startedAtMs: now,
       finishedAtMs: null,
       currentIndex: 0,
-      currentUnlockedAtMs: now,
+      // GPS-gated checkpoints (radiusMeters > 0) stay locked until reportPosition
+      // confirms arrival (doc §4); ungated ones (desk-race test data) unlock now.
+      currentUnlockedAtMs: checkpointRequiresGps(first) ? null : now,
       penaltySeconds: 0,
       skipSeconds: 0,
       points: 0,
@@ -102,7 +109,9 @@ export class RaceEngine {
     };
     this.stateByTeam.set(teamId, state);
     this.log({ type: "team_started", teamId });
-    this.log({ type: "checkpoint_unlocked", teamId, checkpoint: this.config.checkpoints[0]!.checkpoint });
+    if (state.currentUnlockedAtMs !== null) {
+      this.log({ type: "checkpoint_unlocked", teamId, checkpoint: first.checkpoint });
+    }
   }
 
   currentCheckpoint(teamId: string): Checkpoint | null {
@@ -137,8 +146,10 @@ export class RaceEngine {
     const now = this.clock.now();
 
     if (next) {
-      state.currentUnlockedAtMs = now;
-      this.log({ type: "checkpoint_unlocked", teamId, checkpoint: next.checkpoint });
+      state.currentUnlockedAtMs = checkpointRequiresGps(next) ? null : now;
+      if (state.currentUnlockedAtMs !== null) {
+        this.log({ type: "checkpoint_unlocked", teamId, checkpoint: next.checkpoint });
+      }
       return {
         outcome: "correct",
         penaltySeconds: 0,
@@ -158,6 +169,61 @@ export class RaceEngine {
       nextCheckpoint: null,
       finished: true,
     };
+  }
+
+  private requireArrived(state: TeamState, checkpoint: Checkpoint): void {
+    if (state.currentUnlockedAtMs === null) {
+      throw new Error(
+        `Checkpoint ${checkpoint.checkpoint} has not been reached yet - GPS must confirm arrival first`
+      );
+    }
+  }
+
+  /**
+   * Record a GPS fix for the team's current checkpoint (doc §4). Accuracy is
+   * checked before distance: a fix worse than the fence radius is refused
+   * outright, regardless of how close it looks, so a sloppy signal can't
+   * fake an arrival. Once a fix lands inside the fence, the checkpoint
+   * unlocks and its challenge timer starts.
+   */
+  reportPosition(teamId: string, fix: GpsFix): GpsFixResult {
+    const state = this.requireState(teamId);
+    const checkpoint = this.currentCheckpoint(teamId);
+    if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
+
+    const distance = distanceMeters(fix.latitude, fix.longitude, checkpoint.latitude, checkpoint.longitude);
+
+    let accepted: boolean;
+    let reason: GpsRejectReason | undefined;
+    if (fix.accuracyMeters > checkpoint.radiusMeters) {
+      accepted = false;
+      reason = "poor_accuracy";
+    } else if (distance > checkpoint.radiusMeters) {
+      accepted = false;
+      reason = "too_far";
+    } else {
+      accepted = true;
+    }
+
+    this.log({
+      type: "gps_reported",
+      teamId,
+      checkpoint: checkpoint.checkpoint,
+      data: {
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        accuracyMeters: fix.accuracyMeters,
+        distanceMeters: distance,
+        accepted,
+        reason,
+      },
+    });
+
+    if (accepted && state.currentUnlockedAtMs === null) {
+      state.currentUnlockedAtMs = this.clock.now();
+    }
+
+    return { accepted, distanceMeters: distance, accuracyMeters: fix.accuracyMeters, reason };
   }
 
   private recordFailedAttempt(
@@ -187,6 +253,7 @@ export class RaceEngine {
     const state = this.requireState(teamId);
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
+    this.requireArrived(state, checkpoint);
     if (!SELF_CHECKED_TYPES.has(checkpoint.challengeType)) {
       throw new Error(
         `Checkpoint ${checkpoint.checkpoint} is challengeType "${checkpoint.challengeType}"; use submitJudgement`
@@ -212,6 +279,7 @@ export class RaceEngine {
     const state = this.requireState(teamId);
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
+    this.requireArrived(state, checkpoint);
     if (SELF_CHECKED_TYPES.has(checkpoint.challengeType)) {
       throw new Error(
         `Checkpoint ${checkpoint.checkpoint} is challengeType "${checkpoint.challengeType}"; use submitAnswer`
@@ -266,6 +334,7 @@ export class RaceEngine {
     const state = this.requireState(teamId);
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
+    this.requireArrived(state, checkpoint);
     if (!this.canSkip(teamId)) {
       throw new Error(
         `Checkpoint ${checkpoint.checkpoint} cannot be skipped yet: time cap is ${checkpoint.timeLimitSeconds}s`
@@ -287,12 +356,17 @@ export class RaceEngine {
 
   /**
    * Organiser override: force the current checkpoint open regardless of GPS
-   * state. A no-op on the phase-1 engine (there is no geofence yet) but kept
-   * as a stable entry point for the GPS phase, and to log the intervention.
+   * state (doc §9/§10 - dead phone, no signal, closed courtyard). No admin UI
+   * calls this yet (that's Phase 6), but the engine behaviour is real: it
+   * unlocks the checkpoint exactly as a successful GPS fix would.
    */
   manualUnlock(teamId: string): void {
+    const state = this.requireState(teamId);
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
+    if (state.currentUnlockedAtMs === null) {
+      state.currentUnlockedAtMs = this.clock.now();
+    }
     this.log({ type: "manual_unlock", teamId, checkpoint: checkpoint.checkpoint });
   }
 

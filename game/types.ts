@@ -77,6 +77,7 @@ export interface TeamState {
 export type GameEventType =
   | "team_started"
   | "checkpoint_unlocked"
+  | "gps_reported"
   | "answer_submitted"
   | "judgement_submitted"
   | "checkpoint_passed"
@@ -84,6 +85,21 @@ export type GameEventType =
   | "checkpoint_skipped"
   | "team_finished"
   | "manual_unlock";
+
+export interface GpsFix {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+}
+
+export type GpsRejectReason = "poor_accuracy" | "too_far";
+
+export interface GpsFixResult {
+  accepted: boolean;
+  distanceMeters: number;
+  accuracyMeters: number;
+  reason?: GpsRejectReason;
+}
 
 export interface GameEvent {
   type: GameEventType;
