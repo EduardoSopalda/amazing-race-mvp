@@ -51,37 +51,53 @@ export default function LoginPage() {
   }
 
   return (
-    <main>
-      <h1>Barcelona Race</h1>
-      <h2>Team login</h2>
-      <form className="card" onSubmit={handleSubmit}>
-        <div className="field">
-          <label htmlFor="teamId">Team</label>
-          <select id="teamId" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+    // No .strip here, deliberately - there's no team, checkpoint, or race
+    // clock yet at login, so this doesn't borrow the in-race header (a real
+    // gap the design review caught: showing another team's mid-race state
+    // stamped across a login screen).
+    <div className="phone">
+      <main className="stage">
+        <div className="login-brand">
+          <picture>
+            <source srcSet="/amazing-race-logo.webp" type="image/webp" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/amazing-race-logo.png" alt="The Amazing Race Barcelona - Gab Lab Edition" />
+          </picture>
         </div>
-        <div className="field">
-          <label htmlFor="pin">PIN</label>
-          <input
-            id="pin"
-            type="tel"
-            inputMode="numeric"
-            autoComplete="off"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            placeholder="1111"
-          />
-        </div>
-        <button type="submit" className="primary" disabled={submitting || !teamId || !pin}>
-          {submitting ? "Starting..." : "Start race"}
+        <form id="login-form" className="packet pin" onSubmit={handleSubmit}>
+          <span className="stamp">Official device</span>
+          <h1>Open the route</h1>
+          <p className="mission">One game phone per team. Keep this tab awake once the race starts - the server owns the clock.</p>
+          <div className="field">
+            <label htmlFor="teamId">Team</label>
+            <select id="teamId" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="pin">Team PIN</label>
+            <input
+              id="pin"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="off"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="1111"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+        </form>
+      </main>
+      <footer className="thumb">
+        <button type="submit" form="login-form" className="primary" disabled={submitting || !teamId || !pin}>
+          {submitting ? "Starting..." : "Seal and start"}
         </button>
-        {error && <p className="error">{error}</p>}
-      </form>
-    </main>
+      </footer>
+    </div>
   );
 }

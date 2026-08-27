@@ -172,9 +172,43 @@ Three calls made without stopping to ask, each reversible:
   colour; a deliberate nudge apart is still on the table if it reads badly
   live.
 
-Login (`app/team/login/page.tsx`) is still the plain dark UI - the pack
-explicitly scoped that out of the first pass ("can reuse `.phone` + packet
-later. Not required for the first visual pass").
+Login (`app/team/login/page.tsx`) now uses the same skin too: `.phone` +
+a `.packet` styled "Official device" form (team picker, PIN), with Gab's
+event logo (`public/amazing-race-logo.png`/`.webp`) above it in place of
+the racing header - deliberately *not* the `.strip` used everywhere else,
+since there's no team, checkpoint, or clock to show yet at login (the
+design review's own finding: a race header on the login screen shows a
+race that hasn't started). The logo was resized from a 2.7MB source PNG
+to a 900px-wide WebP (~155KB) with a PNG fallback via `<picture>`, both
+committed to `public/`.
+
+Two more gaps only surfaced once the login screen actually had enough
+content to expose them - the racing screens' shorter content never
+triggered either:
+
+- **`.pin input` - the styled team PIN field - had the same gap as
+  `.preview`**: only ever defined in the standalone prototype's own
+  `<style>`, never carried into `team-skin.css`. Added it.
+- **A real CSS Grid bug: `.phone` only had `min-height`, not a definite
+  `height`.** A grid container's `1fr` track only truly constrains its
+  content when the container's own size is *definite* - with only
+  `min-height`, tall content (the login logo plus its packet) just grew
+  `.phone` past the viewport instead of scrolling inside `.stage`,
+  pushing the "Seal and start" button off the bottom of the screen on
+  short phones. Confirmed by measuring actual computed heights via
+  Playwright (`.phone` rendered 713px tall in a 667px viewport before the
+  fix), not just by eye. Fixed with an explicit `height: 100dvh` (with
+  the `100svh` fallback pair already there) alongside the existing
+  `min-height`, plus `min-height: 0` on `.stage` itself so its own
+  `overflow: auto` can actually take over. This is a real fix for every
+  `.phone` screen, not just login - it just took login's taller content
+  to expose it.
+
+Verified the same way: a full Playwright login round-trip (team select,
+PIN, submit, lands on `/team`) at three viewports (390x844, a short
+375x667, and 414x896), confirming the logo renders, the form is usable,
+and - the actual regression check - the "Seal and start" button stays
+fully visible and clickable at the shortest tested height.
 
 ## The real route
 
