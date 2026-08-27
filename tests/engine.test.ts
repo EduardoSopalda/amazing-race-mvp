@@ -410,3 +410,102 @@ describe("RaceEngine - photo judgement verdicts (Phase 4/5)", () => {
     expect(retry.nextCheckpoint?.checkpoint).toBe(2);
   });
 });
+
+describe("RaceEngine - per-team checkpoint overrides and host penalties", () => {
+  const overrideConfig: RaceConfig = {
+    checkpoints: [
+      {
+        checkpoint: 1,
+        name: "Secret Mission",
+        latitude: 0,
+        longitude: 0,
+        radiusMeters: 0,
+        clue: "Base clue - should never be seen once overridden",
+        challengeType: "photo",
+        instruction: "Base instruction",
+        aiCriteria: ["base criterion"],
+        rewardPoints: 100,
+        wrongPenaltySeconds: 30,
+        skipPenaltySeconds: 60,
+        timeLimitSeconds: 480,
+        teamOverrides: {
+          red: { instruction: "Dance with a stranger", aiCriteria: ["team dancing with a stranger"] },
+          blue: { instruction: "Get three strangers to shout Visca Barcelona", aiCriteria: ["three strangers shouting"] },
+        },
+      },
+      {
+        checkpoint: 2,
+        name: "Finish",
+        latitude: 0,
+        longitude: 0,
+        radiusMeters: 0,
+        clue: "done",
+        challengeType: "trivia",
+        instruction: "answer",
+        correctAnswer: "yes",
+        rewardPoints: 100,
+        wrongPenaltySeconds: 30,
+        skipPenaltySeconds: 60,
+        timeLimitSeconds: 480,
+      },
+    ],
+  };
+
+  it("gives each team its own clue/criteria at the same checkpoint, and passes an unlisted team the base content", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(overrideConfig, makeTeams(), clock); // makeTeams() = red, blue only
+    engine.startTeam("red");
+    engine.startTeam("blue");
+
+    expect(engine.currentCheckpoint("red")?.instruction).toBe("Dance with a stranger");
+    expect(engine.currentCheckpoint("blue")?.instruction).toBe("Get three strangers to shout Visca Barcelona");
+
+    // Base fields not touched by the override still come through unchanged.
+    expect(engine.currentCheckpoint("red")?.rewardPoints).toBe(100);
+    expect(engine.currentCheckpoint("red")?.checkpoint).toBe(1);
+  });
+
+  it("carries the override through to nextCheckpoint on a neighbouring stop too", () => {
+    const clock = createFakeClock(0);
+    const teams: Team[] = [{ id: "red", name: "Red", colour: "#c0392b", pin: "1111" }];
+    const twoStopWithOverrideSecond: RaceConfig = {
+      checkpoints: [
+        {
+          checkpoint: 1,
+          name: "First",
+          latitude: 0,
+          longitude: 0,
+          radiusMeters: 0,
+          clue: "clue",
+          challengeType: "trivia",
+          instruction: "answer",
+          correctAnswer: "yes",
+          rewardPoints: 100,
+          wrongPenaltySeconds: 30,
+          skipPenaltySeconds: 60,
+          timeLimitSeconds: 480,
+        },
+        overrideConfig.checkpoints[0]!,
+      ],
+    };
+    const engine = new RaceEngine(twoStopWithOverrideSecond, teams, clock);
+    engine.startTeam("red");
+    const result = engine.submitAnswer("red", "yes");
+    expect(result.nextCheckpoint?.instruction).toBe("Dance with a stranger");
+  });
+
+  it("applyPenalty adds a host-decided penalty matching Gab's rule table, and rejects negative values", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(overrideConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    engine.applyPenalty("red", 120, "Minor rule violation - skipped ahead without checking in");
+    expect(engine.progress("red").penaltySeconds).toBe(120);
+
+    engine.applyPenalty("red", 600, "Deliberate cheating - photo taken from a different location");
+    expect(engine.progress("red").penaltySeconds).toBe(720);
+
+    expect(() => engine.applyPenalty("red", -10, "should be rejected")).toThrow(/zero or positive/);
+    expect(engine.events.filter((e) => e.type === "penalty_applied")).toHaveLength(2);
+  });
+});

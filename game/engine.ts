@@ -114,10 +114,18 @@ export class RaceEngine {
     }
   }
 
+  /** Applies a checkpoint's teamOverrides (e.g. a per-colour "Secret Mission"), if any. */
+  private resolveForTeam(checkpoint: Checkpoint, teamId: string): Checkpoint {
+    const override = checkpoint.teamOverrides?.[teamId];
+    if (!override) return checkpoint;
+    return { ...checkpoint, ...override };
+  }
+
   currentCheckpoint(teamId: string): Checkpoint | null {
     const state = this.requireState(teamId);
     if (state.finishedAtMs !== null) return null;
-    return this.config.checkpoints[state.currentIndex] ?? null;
+    const checkpoint = this.config.checkpoints[state.currentIndex];
+    return checkpoint ? this.resolveForTeam(checkpoint, teamId) : null;
   }
 
   /** Seconds since the current checkpoint's clue was unlocked (doc §7: 8-minute cap). */
@@ -142,7 +150,8 @@ export class RaceEngine {
   private advance(teamId: string, checkpoint: Checkpoint, pointsAwarded: number): SubmitResult {
     const state = this.requireState(teamId);
     state.currentIndex += 1;
-    const next = this.config.checkpoints[state.currentIndex] ?? null;
+    const nextRaw = this.config.checkpoints[state.currentIndex];
+    const next = nextRaw ? this.resolveForTeam(nextRaw, teamId) : null;
     const now = this.clock.now();
 
     if (next) {
@@ -407,6 +416,22 @@ export class RaceEngine {
       state.currentUnlockedAtMs = this.clock.now();
     }
     this.log({ type: "manual_unlock", teamId, checkpoint: checkpoint.checkpoint });
+  }
+
+  /**
+   * A host-applied penalty for a rule violation rather than a wrong
+   * checkpoint submission - e.g. Gab's own house rules: minor violation
+   * +2min, skipped requirement +5min, deliberate cheating +10min. No admin
+   * UI calls this yet (Phase 6); it's the engine hook for one to call.
+   * Negative seconds are rejected - use it to add time, not remove it.
+   */
+  applyPenalty(teamId: string, seconds: number, reason: string): void {
+    const state = this.requireState(teamId);
+    if (seconds < 0) {
+      throw new Error("Penalty seconds must be zero or positive");
+    }
+    state.penaltySeconds += seconds;
+    this.log({ type: "penalty_applied", teamId, data: { seconds, reason } });
   }
 
   progress(teamId: string): {

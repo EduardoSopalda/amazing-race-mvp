@@ -1,12 +1,21 @@
 import { Redis } from "@upstash/redis";
 import { RaceEngine } from "@/game/engine";
 import type { RaceConfig, SerializedRace, Team } from "@/game/types";
-import teamsData from "@/challenges/teams.example.json";
-import checkpointsData from "@/challenges/deskrace.example.json";
+import deskTeamsData from "@/challenges/teams.example.json";
+import deskCheckpointsData from "@/challenges/deskrace.example.json";
+import barcelonaTeamsData from "@/challenges/teams.barcelona.json";
+import barcelonaCheckpointsData from "@/challenges/barcelona-route.json";
 
-const RACE_KEY = "barcelona-race:state:v1";
+// Which route is live is a deploy-time switch, not a code change: set
+// RACE_ROUTE=barcelona (env var, e.g. in Vercel's Environment Variables) for
+// the real event; leave it unset for the desk-race test data. Defaults to
+// desk-race so nothing about the currently-deployed site changes until this
+// is deliberately flipped for game day.
+const ROUTE = process.env.RACE_ROUTE === "barcelona" ? "barcelona" : "deskrace";
 
 function buildTeamsAndConfig(): { teams: Team[]; config: RaceConfig } {
+  const teamsData = ROUTE === "barcelona" ? barcelonaTeamsData : deskTeamsData;
+  const checkpointsData = ROUTE === "barcelona" ? barcelonaCheckpointsData : deskCheckpointsData;
   const teams = teamsData.teams as Team[];
   const config: RaceConfig = { checkpoints: checkpointsData.checkpoints as RaceConfig["checkpoints"] };
   return { teams, config };
@@ -33,6 +42,10 @@ declare global {
   // eslint-disable-next-line no-var
   var __barcelonaRaceMemory: SerializedRace | undefined;
 }
+
+// Keyed by route so flipping RACE_ROUTE never mixes desk-test state with
+// real-event state, even against the same Redis store.
+const RACE_KEY = `barcelona-race:state:v1:${ROUTE}`;
 
 async function loadSnapshot(): Promise<SerializedRace | null> {
   const kv = getRedis();

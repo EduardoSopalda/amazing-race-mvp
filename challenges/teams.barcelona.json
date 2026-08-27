@@ -1,0 +1,9 @@
+{
+  "_comment": "REAL EVENT TEAMS, matching Gab's script's four colours (Red/Blue/Green/Yellow - each has a different Secret Mission at checkpoint 11, see barcelona-route.json). PINs below are still placeholders copied from the desk-race test data - CHANGE THEM before game day so teams don't guess each other's PIN, and tell each team theirs separately.",
+  "teams": [
+    { "id": "red", "name": "Red", "colour": "#c0392b", "pin": "1111" },
+    { "id": "blue", "name": "Blue", "colour": "#2980b9", "pin": "2222" },
+    { "id": "green", "name": "Green", "colour": "#27ae60", "pin": "3333" },
+    { "id": "yellow", "name": "Yellow", "colour": "#d4a017", "pin": "4444" }
+  ]
+}

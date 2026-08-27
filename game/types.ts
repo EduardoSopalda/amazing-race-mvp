@@ -36,6 +36,22 @@ export interface Checkpoint {
   wrongPenaltySeconds: number;
   skipPenaltySeconds: number;
   timeLimitSeconds: number;
+  /**
+   * Per-team overrides for a checkpoint whose content genuinely differs by
+   * team (e.g. a "Secret Mission" with a different task per colour). Keyed
+   * by team id; any field present replaces the base checkpoint's value for
+   * that team only. GPS location/radius/timing/points stay shared - only
+   * text/answer/criteria are meant to vary.
+   */
+  teamOverrides?: Record<
+    string,
+    {
+      clue?: string;
+      instruction?: string;
+      correctAnswer?: string;
+      aiCriteria?: string[];
+    }
+  >;
 }
 
 export interface RaceConfig {
@@ -89,7 +105,8 @@ export type GameEventType =
   | "checkpoint_ambiguous"
   | "checkpoint_skipped"
   | "team_finished"
-  | "manual_unlock";
+  | "manual_unlock"
+  | "penalty_applied";
 
 export interface GpsFix {
   latitude: number;

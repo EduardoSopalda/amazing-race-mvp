@@ -1,10 +1,12 @@
 # Barcelona Race
 
 A GPS-based team-building race: teams walk Barcelona, unlock clues on arrival,
-submit evidence, and compete on a server clock. Concept and full spec in
-`docs/CONCEPT.md`.
+submit evidence, and compete on a server clock. Original engineering spec in
+`docs/CONCEPT.md`. The actual event script - written by Gab, full text in
+`docs/BARCELONA-SCRIPT.md` - is adapted into `challenges/barcelona-route.json`;
+see **The real route** below for what changed in that adaptation.
 
-## Status: Phase 4/5 - Photo capture and AI judging
+## Status: Phase 4/5 - Photo capture and AI judging, plus the real route
 
 Per the build sequence in the concept doc (§13):
 
@@ -42,8 +44,58 @@ anywhere.
 
 Still not built: the organiser dashboard (Phase 6 - manual unlock, override
 AI, a review queue for genuinely stuck ambiguous cases), and Phase 7-8
-hardening/polish. `RaceEngine.manualUnlock()` already exists and works;
-there's just no admin UI or API route calling it yet.
+hardening/polish. `RaceEngine.manualUnlock()` and the new
+`RaceEngine.applyPenalty()` already exist and work; there's just no admin UI
+or API route calling either yet.
+
+## The real route
+
+`challenges/barcelona-route.json` (paired with `challenges/teams.barcelona.json`)
+is the actual event, adapted from Gab's script - 12 stops, real GPS
+coordinates, a Roadblock, a Detour, a per-team Secret Mission, and a final
+memory challenge. Switch to it with an env var, without touching code:
+
+```
+RACE_ROUTE=barcelona npm run dev     # local
+```
+
+or set `RACE_ROUTE=barcelona` in Vercel's Environment Variables for the real
+event, and leave it unset everywhere else - it defaults to the desk-race, so
+nothing about the currently-deployed site changes until this is deliberately
+flipped. State is keyed separately per route, so flipping back and forth
+never mixes desk-test progress with real-event progress.
+
+**Two new engine features exist because the real script needed them:**
+- `Checkpoint.teamOverrides` - a checkpoint's clue/instruction/criteria can
+  differ per team id. Used for the Secret Mission (checkpoint 11), where
+  each of the four colours gets a genuinely different task.
+- `RaceEngine.applyPenalty(teamId, seconds, reason)` - a host-applied time
+  penalty for a rule violation (not a wrong submission). Matches Gab's own
+  penalty table (page 6 of the script): minor +2min, skipped requirement
+  +5min, deliberate cheating +10min. No admin UI calls this yet - it's an
+  engine hook, callable directly if you need it before Phase 6 exists.
+
+**What was simplified from the original script, and why** (each is also
+called out in that checkpoint's own `_note` field in the JSON):
+
+| Stop | Original | Simplified to |
+|---|---|---|
+| 1 - Arc de Triomf | Best photo across all 4 teams gets a 3-min head start | Photo still judged pass/fail; the cross-team "best" comparison isn't automated - a host has to eyeball all four and award it manually if you want to keep it |
+| 4 - Lost in Barcelona | 6 separate required photos; 1st/2nd/3rd/4th completion-order bonus | 1 combined photo with the most iconic elements; completion-order bonus dropped (needs live cross-team timing) |
+| 5 - Roadblock | Video proof of the team saying a learned Catalan phrase | Photo of the team with the stranger who taught them - proves they found someone, doesn't verify the phrase. Real verification is a host judgement call, in person |
+| 7 - Chocolate challenge | Video of the blindfolded hands-free feeding | Photo of the moment - a weaker check than video; lean on host judgement if it looks off |
+| 9 - Detour | A real choice between Brains (5 trivia questions) and Balls (30 football touches on video) | Fixed to one Brains question - the app has no branching-choice mechanic yet. A team that wants to do Balls instead can have a host verify it in person and call `manualUnlock()` for them |
+
+Everything else (stops 2, 3, 6, 8, 10, the BARCINO trivia stop, the Secret
+Mission, and the Final Memory Challenge) matches the script directly,
+including its own specific penalty numbers where it gave one (BARCINO's
+2-minute wrong-answer wait, the Final Memory Challenge's 60-second one).
+
+**Before game day:** change the PINs in `challenges/teams.barcelona.json`
+(currently copied from the desk-race placeholders), and walk the real route
+once with a phone to confirm each `radiusMeters` fence and GPS accuracy
+actually work at that spot - doc §1's own advice, and now there's a real
+mechanism to test it against instead of a guess.
 
 ```
 game/
@@ -54,11 +106,12 @@ game/
   scoring.ts   adjusted time, leaderboard ranking with the 30s tie-break rule
   engine.ts    RaceEngine: startTeam, reportPosition, submitAnswer,
                submitJudgement (correct/incorrect/ambiguous), skip,
-               manualUnlock, leaderboard, publicTeams, progress
+               manualUnlock, applyPenalty, leaderboard, publicTeams, progress
 lib/
   raceStore.ts   withEngine(): loads state, runs a request, persists it back -
                  Upstash Redis if KV_REST_API_URL/TOKEN are set, else an
-                 in-memory fallback for local dev (see Deploying)
+                 in-memory fallback for local dev (see Deploying). Also
+                 picks desk-race vs. real route based on RACE_ROUTE.
   session.ts     the team session cookie name
   teamState.ts   builds the client-safe state payload (never leaks answers,
                  aiCriteria, or the checkpoint's exact coordinates)
@@ -83,11 +136,14 @@ app/
   api/team/logout          POST clears the session cookie
   api/leaderboard          GET public standings
 challenges/
-  teams.example.json       TEST DATA - 4 example teams with PINs
+  teams.example.json       TEST DATA - 4 example teams with PINs (desk-race)
   deskrace.example.json    TEST DATA - 6 checkpoints: 5 self-checked
                             (radiusMeters: 0), 1 photo (also radiusMeters: 0)
-  barcelona.example.json   TEST DATA from Phase 1 - real coordinates, not
-                            wired into the default desk-race config
+  teams.barcelona.json     REAL EVENT teams - same 4 colours, change the PINs
+  barcelona-route.json     REAL EVENT route - 12 stops adapted from Gab's
+                            script, see "The real route" above
+  barcelona.example.json   TEST DATA from Phase 1 - superseded by
+                            barcelona-route.json, kept for reference
 tests/
   engine.test.ts
 ```
@@ -132,7 +188,9 @@ Redis instead whenever it's configured:
    judged photos are kept for the dispute record - Vercel injects
    `BLOB_READ_WRITE_TOKEN` automatically. Without it, photos are still
    judged, just not stored.
-5. Deploy (or redeploy after adding the env vars above).
+5. When you're ready for the real event (not before), add `RACE_ROUTE` =
+   `barcelona` to switch off the desk-race data - see "The real route" above.
+6. Deploy (or redeploy after adding the env vars above).
 
 ## Limits of this phase
 
@@ -161,15 +219,18 @@ Redis instead whenever it's configured:
 ## What's not built yet
 
 The organiser dashboard (Phase 6 - live map, leaderboard review queue,
-manual unlock, override AI - the engine methods exist, the UI doesn't), and
-Phase 7-8 hardening/polish (offline upload queue, duplicate-fix handling,
-course close, etc). See `docs/CONCEPT.md` §13 for the full phase list, and
-§18 for the open decisions (area, checkpoint count, privacy retention) that
-need answers before real Barcelona checkpoints are written.
+manual unlock, override AI, a UI for `applyPenalty` - the engine methods
+exist, the UI doesn't), branching Detours (a real choice between two
+challenges), multi-photo checkpoints (submit several photos as one gated
+step), cross-team bonuses (best photo, completion order - need comparing
+teams against each other, which the engine doesn't do), and video
+submissions (AI judging is photo-only right now). See "The real route"
+above for exactly which stops that affects today, and `docs/CONCEPT.md`
+§13 for the original phase list.
 
-The checkpoints in `challenges/*.example.json` are all placeholders for
-testing. The concept doc's own recommended first move: freeze the real 10
-Barcelona checkpoints and walk the loop, phone in hand, checking GPS
-accuracy at each one and testing the photo challenges on-site - now that
-real GPS gating and AI judging both exist, that walk is what actually
-proves the checkpoints work, not a guess.
+`challenges/deskrace.example.json` and `barcelona.example.json` remain test
+placeholders. `challenges/barcelona-route.json` is the real event route -
+walk it once with a phone before game day (doc §1's own advice) to confirm
+each `radiusMeters` fence actually works at that spot; that walk is also
+the natural time to test the photo challenges on-site and decide whether
+any of the simplifications above need a second look.
