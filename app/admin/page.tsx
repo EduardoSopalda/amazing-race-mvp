@@ -101,6 +101,27 @@ export default function AdminPage() {
     }
   }
 
+  async function handleOverride(teamId: string, verdict: "correct" | "incorrect") {
+    setBusyTeamId(teamId);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, verdict }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(data.error ?? "Could not override");
+        return;
+      }
+      setTeams(data.teams);
+      setMessage(`${teamId}: organiser marked ${verdict}`);
+    } finally {
+      setBusyTeamId(null);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
     router.push("/admin/login");
@@ -160,6 +181,46 @@ export default function AdminPage() {
                   </span>
                 </div>
               )}
+
+              {team.checkpoint &&
+                !team.checkpoint.selfChecked &&
+                team.checkpoint.arrived &&
+                team.lastJudgement &&
+                team.lastJudgement.checkpoint === team.checkpoint.index && (
+                  <div style={{ marginTop: 12 }}>
+                    <label>Last submission on this checkpoint</label>
+                    {team.lastJudgement.photoUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={team.lastJudgement.photoUrl}
+                        alt="Last photo submission"
+                        style={{ width: "100%", borderRadius: 8, margin: "6px 0" }}
+                      />
+                    )}
+                    <p style={{ fontSize: "0.9rem", color: "#b9bdc8" }}>
+                      AI said <strong>{team.lastJudgement.verdict}</strong>
+                      {team.lastJudgement.reason ? ` - ${team.lastJudgement.reason}` : ""} ({timeAgo(team.lastJudgement.atMs)})
+                    </p>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        className="secondary"
+                        style={{ flex: 1 }}
+                        disabled={busyTeamId === team.id}
+                        onClick={() => handleOverride(team.id, "correct")}
+                      >
+                        Override: mark correct
+                      </button>
+                      <button
+                        className="secondary"
+                        style={{ flex: 1 }}
+                        disabled={busyTeamId === team.id}
+                        onClick={() => handleOverride(team.id, "incorrect")}
+                      >
+                        Override: mark incorrect
+                      </button>
+                    </div>
+                  </div>
+                )}
             </>
           )}
 

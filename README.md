@@ -33,8 +33,8 @@ Per the build sequence in the concept doc (§13):
   normal wrong-answer penalty and allows resubmission, amber (`ambiguous`)
   applies **no penalty** and lets the team retake the photo (doc §9: "AI
   never has absolute authority" / "ambiguous decisions go to the organiser
-  instead of auto-penalising" - with no admin queue built yet, this is the
-  honest stand-in until Phase 6 adds one).
+  instead of auto-penalising"). The dashboard below can now override any of
+  these three - see "Override AI" under Organiser dashboard.
 
 The desk-race checkpoints (`challenges/deskrace.example.json`) still use
 `radiusMeters: 0` (no GPS gate), so Phases 1-3 remain fully desk-testable.
@@ -45,9 +45,12 @@ anywhere.
 - **Phase 6 (done, minimal):** an organiser dashboard at `/admin` - live
   status for all four teams (current checkpoint, arrived/GPS-pending,
   penalties, points), a manual-unlock button for a team stuck on a bad GPS
-  fix or a closed location, and penalty buttons matching Gab's own rule
-  table (minor/skipped/cheating, or a custom amount + reason). Password-
-  gated by an `ORGANISER_KEY` env var - see "Organiser dashboard" below.
+  fix or a closed location, penalty buttons matching Gab's own rule table
+  (minor/skipped/cheating, or a custom amount + reason), and an AI-override
+  panel that shows the last photo submitted on a team's current checkpoint
+  (the image itself, when Blob is connected) alongside the AI's verdict and
+  reasoning, with buttons to force it correct or incorrect. Password-gated
+  by an `ORGANISER_KEY` env var - see "Organiser dashboard" below.
 
 Still not built: Phase 7-8 hardening/polish (a live map, an offline upload
 queue, duplicate-fix handling, course close). See "What's not built yet"
@@ -112,7 +115,7 @@ rather than defaulting open.
 Once logged in, `/admin` polls every 4 seconds and shows, per team: whether
 they've started, their current checkpoint and challenge type, whether GPS
 has confirmed arrival yet, penalties/skips/points, and (once finished) their
-adjusted time. Two actions:
+adjusted time. Three actions:
 
 - **Manually unlock current checkpoint** - for a team stuck on a bad GPS fix
   or a closed/inaccessible location (doc §9/§10). Disabled once already
@@ -121,10 +124,21 @@ adjusted time. Two actions:
   +5min, deliberate cheating +10min) plus a custom seconds+reason field.
   Calls `RaceEngine.applyPenalty()`, which requires a reason and rejects
   negative values.
+- **Override AI** - once a team has submitted a photo/interaction
+  challenge, the dashboard shows that submission (the photo itself if Blob
+  is connected, otherwise just the AI's verdict and reasoning) with two
+  buttons: force it correct (advances the team, awards points) or incorrect
+  (applies the normal wrong-answer penalty, lets them retry). This is the
+  literal "override AI" doc §13 lists for Phase 6 - it works on green/red/
+  amber verdicts alike, calling the same `RaceEngine.submitJudgement()`
+  path a team's own submission uses, just with `reason: "Organiser
+  override"`. Only shown for the team's *current* checkpoint - once they've
+  moved on, the button for the old one disappears.
 
 This is deliberately minimal (doc §13's own bar for Phase 6: "you can
-unstick a team without touching the database") - no live map, no photo
-review queue, no synchronised start button. See "What's not built yet".
+unstick a team without touching the database") - no live map, no queued
+review list of every ambiguous case across all teams, no synchronised start
+button. See "What's not built yet".
 
 ```
 game/
@@ -151,7 +165,7 @@ lib/
   adminAuth.ts   the organiser cookie name + isValidAdminCookie() (checked
                  against ORGANISER_KEY on every admin request)
   adminState.ts  buildAdminSnapshot(): per-team status for the dashboard,
-                 including each team's last GPS event
+                 including each team's last GPS event and last AI judgement
 app/
   page.tsx                 landing
   team/login/page.tsx      PIN login
@@ -175,6 +189,8 @@ app/
   api/admin/teams          GET status of every team (organiser only)
   api/admin/unlock         POST {teamId} -> RaceEngine.manualUnlock()
   api/admin/penalty        POST {teamId, seconds, reason} -> RaceEngine.applyPenalty()
+  api/admin/override       POST {teamId, verdict} -> RaceEngine.submitJudgement()
+                            with reason "Organiser override"
 challenges/
   teams.example.json       TEST DATA - 4 example teams with PINs (desk-race)
   deskrace.example.json    TEST DATA - 6 checkpoints: 5 self-checked
@@ -264,16 +280,18 @@ Redis instead whenever it's configured:
 
 ## What's not built yet
 
-Beyond the minimal dashboard: a live map, a photo review queue (for
-ambiguous verdicts, or just to eyeball submissions), a "start the race"
-button for a synchronised staggered start, and Phase 7-8 hardening (offline
-upload queue, duplicate-fix handling, course close). Also still missing:
-branching Detours (a real choice between two challenges), multi-photo
-checkpoints (submit several photos as one gated step), cross-team bonuses
-(best photo, completion order - need comparing teams against each other,
-which the engine doesn't do), and video submissions (AI judging is
-photo-only right now). See "The real route" above for exactly which stops
-that affects today, and `docs/CONCEPT.md` §13 for the original phase list.
+Beyond the minimal dashboard: a live map, a review *queue* (today you can
+override the current checkpoint for a team you're already looking at, but
+there's no single list of every ambiguous submission across all four teams
+to work through), a "start the race" button for a synchronised staggered
+start, and Phase 7-8 hardening (offline upload queue, duplicate-fix
+handling, course close). Also still missing: branching Detours (a real
+choice between two challenges), multi-photo checkpoints (submit several
+photos as one gated step), cross-team bonuses (best photo, completion order
+- need comparing teams against each other, which the engine doesn't do),
+and video submissions (AI judging is photo-only right now). See "The real
+route" above for exactly which stops that affects today, and
+`docs/CONCEPT.md` §13 for the original phase list.
 
 `challenges/deskrace.example.json` and `barcelona.example.json` remain test
 placeholders. `challenges/barcelona-route.json` is the real event route -

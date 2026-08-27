@@ -1,4 +1,5 @@
 import type { RaceEngine } from "@/game/engine";
+import { SELF_CHECKED_TYPES } from "@/game/types";
 
 export interface AdminTeamSnapshot {
   id: string;
@@ -11,6 +12,7 @@ export interface AdminTeamSnapshot {
     total: number;
     name: string;
     challengeType: string;
+    selfChecked: boolean;
     arrived: boolean;
     canSkip: boolean;
   } | null;
@@ -24,6 +26,14 @@ export interface AdminTeamSnapshot {
     distanceMeters?: number;
     accuracyMeters?: number;
     reason?: string;
+  } | null;
+  /** Most recent AI/organiser verdict on a photo/interaction checkpoint, for the override UI. */
+  lastJudgement: {
+    atMs: number;
+    checkpoint: number;
+    verdict: string;
+    reason?: string;
+    photoUrl?: string;
   } | null;
 }
 
@@ -42,6 +52,7 @@ export function buildAdminSnapshot(engine: RaceEngine): AdminTeamSnapshot[] {
         points: 0,
         adjustedTimeSeconds: null,
         lastGps: null,
+        lastJudgement: null,
       };
     }
 
@@ -52,6 +63,9 @@ export function buildAdminSnapshot(engine: RaceEngine): AdminTeamSnapshot[] {
     const lastGpsEvent = [...engine.events]
       .reverse()
       .find((e) => e.type === "gps_reported" && e.teamId === team.id);
+    const lastJudgementEvent = [...engine.events]
+      .reverse()
+      .find((e) => e.type === "judgement_submitted" && e.teamId === team.id);
 
     return {
       ...team,
@@ -64,6 +78,7 @@ export function buildAdminSnapshot(engine: RaceEngine): AdminTeamSnapshot[] {
               total: position.total,
               name: activeCheckpoint.name,
               challengeType: activeCheckpoint.challengeType,
+              selfChecked: SELF_CHECKED_TYPES.has(activeCheckpoint.challengeType),
               arrived: engine.currentUnlockedAtMs(team.id) !== null,
               canSkip: engine.canSkip(team.id),
             }
@@ -81,6 +96,16 @@ export function buildAdminSnapshot(engine: RaceEngine): AdminTeamSnapshot[] {
             reason: lastGpsEvent.data?.reason as string | undefined,
           }
         : null,
+      lastJudgement:
+        lastJudgementEvent && lastJudgementEvent.checkpoint !== undefined
+          ? {
+              atMs: lastJudgementEvent.atMs,
+              checkpoint: lastJudgementEvent.checkpoint,
+              verdict: String(lastJudgementEvent.data?.verdict ?? ""),
+              reason: lastJudgementEvent.data?.reason as string | undefined,
+              photoUrl: lastJudgementEvent.data?.photoUrl as string | undefined,
+            }
+          : null,
     };
   });
 }
