@@ -126,6 +126,32 @@ describe("RaceEngine - a fully scripted race, no GPS or photos", () => {
     expect(engine.events.some((e) => e.type === "team_finished")).toBe(true);
   });
 
+  it("round-trips state through serialize/restore, as a fresh engine would on each serverless request", () => {
+    const clock = createFakeClock(0);
+    const engineA = new RaceEngine(config, makeTeams(), clock);
+    engineA.startTeam("red");
+    clock.advance(5_000);
+    engineA.submitAnswer("red", "wrong");
+    clock.advance(5_000);
+    engineA.submitAnswer("red", "1928");
+
+    const snapshot = JSON.parse(JSON.stringify(engineA.serialize()));
+
+    // A brand new engine instance, as a new serverless invocation would build.
+    const engineB = new RaceEngine(config, makeTeams(), clock);
+    engineB.restore(snapshot);
+
+    expect(engineB.currentCheckpoint("red")?.checkpoint).toBe(2);
+    expect(engineB.progress("red").penaltySeconds).toBe(120);
+    expect(engineB.progress("red").points).toBe(100);
+    expect(engineB.events).toHaveLength(engineA.events.length);
+
+    // Play continues correctly on the restored engine.
+    clock.advance(1_000);
+    const judged = engineB.submitJudgement("red", "correct");
+    expect(judged.nextCheckpoint?.checkpoint).toBe(3);
+  });
+
   it("rejects duplicate PINs at construction", () => {
     const clock = createFakeClock(0);
     const teams: Team[] = [

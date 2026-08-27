@@ -32,7 +32,9 @@ game/
   engine.ts    RaceEngine: startTeam, submitAnswer, submitJudgement, skip,
                manualUnlock, leaderboard, publicTeams, progress
 lib/
-  raceStore.ts   process-wide RaceEngine singleton (in-memory - see Limits)
+  raceStore.ts   withEngine(): loads state, runs a request, persists it back -
+                 Upstash Redis if KV_REST_API_URL/TOKEN are set, else an
+                 in-memory fallback for local dev (see Deploying)
   session.ts     the team session cookie name
   teamState.ts   builds the client-safe state payload (never leaks answers)
 app/
@@ -65,25 +67,42 @@ npm run typecheck
 npm run dev          # starts on 0.0.0.0:3000 so phones on the same Wi-Fi can reach it
 ```
 
-For a real desk race across four phones: run `npm run dev` on your laptop,
-find its LAN IP (e.g. `ipconfig getifaddr en0` on macOS), and open
-`http://<that-ip>:3000` on each phone. Each team logs in at `/team/login`
-with their PIN from `challenges/teams.example.json` - that also starts their
-race clock. `/leaderboard` is public and needs no login.
+For a real desk race across four phones on one Wi-Fi network: run
+`npm run dev` on your laptop, find its LAN IP (e.g. `ipconfig getifaddr en0`
+on macOS), and open `http://<that-ip>:3000` on each phone. Each team logs in
+at `/team/login` with their PIN from `challenges/teams.example.json` - that
+also starts their race clock. `/leaderboard` is public and needs no login.
+With no `KV_REST_API_URL`/`KV_REST_API_TOKEN` set, race state lives in
+server memory for this mode - fine for one laptop, reset on restart.
+
+## Deploying (e.g. Vercel)
+
+Serverless hosting runs each request on a possibly-different, possibly-cold
+instance, so the in-memory fallback above does not work there - state would
+randomly reset or fork between teams. `lib/raceStore.ts` persists to Upstash
+Redis instead whenever it's configured:
+
+1. Import this repo as a Vercel project (Vercel dashboard -> Add New ->
+   Project -> the `amazing-race-mvp` GitHub repo).
+2. In the project's **Storage** tab, create/connect an **Upstash for Redis**
+   database. Vercel injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` into
+   the project's environment automatically - no code changes needed.
+3. Deploy. Every request now loads the race snapshot from Redis, applies the
+   action, and saves it back - see `withEngine()` in `lib/raceStore.ts`.
 
 ## Limits of this phase
 
-- **State is in-memory and single-process.** One `RaceEngine` lives in server
-  memory (`lib/raceStore.ts`). Restarting `next dev`, or ever deploying to a
-  serverless platform with multiple instances, loses or fragments race state.
-  A real database (doc §11) is a later phase - fine for a laptop desk race,
-  not for a real event.
 - **No synchronised staggered start.** The real event has an organiser start
   all teams together (doc §15); here each team's clock starts the moment
   they log in. A "start the race" admin control is Phase 6.
 - **Session cookie is not hardened.** It stores the team ID directly after a
   correct PIN check - fine for a friendly one-off event on trusted phones,
   not a security boundary.
+- **Redis is one shared key, not a queryable database.** `withEngine()`
+  reads and rewrites a single JSON blob per request - fine for a 4x4 pilot,
+  but doc §11's fuller Postgres/Supabase model (separate tables for teams,
+  events, submissions) is still the right call once photos and an admin
+  dashboard need to query history (Phases 4-6).
 
 ## What's not built yet
 

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getEngine } from "@/lib/raceStore";
+import { withEngine } from "@/lib/raceStore";
 
 export async function GET() {
-  const engine = getEngine();
-  return NextResponse.json({ teams: engine.publicTeams() });
+  return withEngine((engine) => NextResponse.json({ teams: engine.publicTeams() }));
 }

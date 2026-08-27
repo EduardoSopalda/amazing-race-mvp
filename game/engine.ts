@@ -6,6 +6,7 @@ import {
   type GameEvent,
   type LeaderboardEntry,
   type RaceConfig,
+  type SerializedRace,
   type SubmitResult,
   type Team,
   type TeamState,
@@ -316,6 +317,29 @@ export class RaceEngine {
     const state = this.requireState(teamId);
     if (state.startedAtMs === null || state.finishedAtMs === null) return null;
     return adjustedTimeSeconds(state.startedAtMs, state.finishedAtMs, state.penaltySeconds, state.skipSeconds);
+  }
+
+  /**
+   * A JSON-safe snapshot of everything mutable (per-team progress + the
+   * event log). Team/checkpoint config is not included - it comes back from
+   * the same static challenge files on every request. Used to persist race
+   * state across serverless invocations, since each one gets a fresh engine.
+   */
+  serialize(): SerializedRace {
+    return {
+      stateByTeam: [...this.stateByTeam.entries()],
+      events: this.events,
+    };
+  }
+
+  /** Replaces current progress and event log with a previously serialized snapshot. */
+  restore(snapshot: SerializedRace): void {
+    this.stateByTeam.clear();
+    for (const [teamId, state] of snapshot.stateByTeam) {
+      this.stateByTeam.set(teamId, state);
+    }
+    this.events.length = 0;
+    this.events.push(...snapshot.events);
   }
 
   leaderboard(): LeaderboardEntry[] {

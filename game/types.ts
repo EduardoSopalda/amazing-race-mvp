@@ -109,3 +109,14 @@ export interface LeaderboardEntry {
   adjustedTimeSeconds: number | null;
   points: number;
 }
+
+/**
+ * A JSON-safe snapshot of everything RaceEngine mutates. Team/checkpoint
+ * config is not included - it is static and rebuilt from the challenge
+ * files on every request. Used to persist race state across serverless
+ * invocations (see lib/raceStore.ts).
+ */
+export interface SerializedRace {
+  stateByTeam: Array<[string, TeamState]>;
+  events: GameEvent[];
+}
