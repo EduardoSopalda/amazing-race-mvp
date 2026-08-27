@@ -49,7 +49,7 @@ export interface Team {
   pin: string;
 }
 
-export type Verdict = "correct" | "incorrect";
+export type Verdict = "correct" | "incorrect" | "ambiguous";
 
 export interface CheckpointAttempt {
   checkpointNumber: number;
@@ -59,6 +59,10 @@ export interface CheckpointAttempt {
   penaltySeconds: number;
   /** True if this attempt was a skip rather than a submission. */
   skipped: boolean;
+  /** Set for photo/interaction attempts - the AI's or organiser's stated reason. */
+  reason?: string;
+  /** Vercel Blob URL, when photo storage is configured. */
+  photoUrl?: string;
 }
 
 export interface TeamState {
@@ -82,6 +86,7 @@ export type GameEventType =
   | "judgement_submitted"
   | "checkpoint_passed"
   | "checkpoint_failed"
+  | "checkpoint_ambiguous"
   | "checkpoint_skipped"
   | "team_finished"
   | "manual_unlock";
@@ -110,7 +115,7 @@ export interface GameEvent {
 }
 
 export interface SubmitResult {
-  outcome: "correct" | "incorrect" | "skipped";
+  outcome: "correct" | "incorrect" | "ambiguous" | "skipped";
   penaltySeconds: number;
   pointsAwarded: number;
   nextCheckpoint: Checkpoint | null;

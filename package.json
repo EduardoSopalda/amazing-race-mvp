@@ -19,9 +19,12 @@
     "vitest": "^2.1.4"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
     "@upstash/redis": "^1.38.3",
+    "@vercel/blob": "^2.8.0",
     "next": "^16.3.3",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
   }
 }

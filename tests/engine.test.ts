@@ -86,7 +86,7 @@ describe("RaceEngine - a fully scripted race, no GPS or photos", () => {
 
     // Checkpoint 2 is a photo challenge: judged externally, not by submitAnswer.
     expect(() => engine.submitAnswer("red", "anything")).toThrow(/submitJudgement/);
-    const judged = engine.submitJudgement("red", "correct", "AI green, 96% confidence");
+    const judged = engine.submitJudgement("red", "correct", { reason: "AI green, 96% confidence" });
     expect(judged.nextCheckpoint?.checkpoint).toBe(3);
 
     // Checkpoint 3 has an 8-minute -> here 60s time cap. Cannot skip early.
@@ -323,5 +323,90 @@ describe("RaceEngine - GPS geofencing (Phase 3)", () => {
     engine.manualUnlock("red");
     expect(engine.currentUnlockedAtMs("red")).not.toBeNull();
     expect(() => engine.submitAnswer("red", "1980")).not.toThrow();
+  });
+});
+
+describe("RaceEngine - photo judgement verdicts (Phase 4/5)", () => {
+  const photoConfig: RaceConfig = {
+    checkpoints: [
+      {
+        checkpoint: 1,
+        name: "Photo stop",
+        latitude: 0,
+        longitude: 0,
+        radiusMeters: 0,
+        clue: "clue",
+        challengeType: "photo",
+        instruction: "photograph the thing",
+        aiCriteria: ["the thing"],
+        rewardPoints: 100,
+        wrongPenaltySeconds: 30,
+        skipPenaltySeconds: 60,
+        timeLimitSeconds: 480,
+      },
+      {
+        checkpoint: 2,
+        name: "Second stop",
+        latitude: 0,
+        longitude: 0,
+        radiusMeters: 0,
+        clue: "clue two",
+        challengeType: "trivia",
+        instruction: "answer",
+        correctAnswer: "yes",
+        rewardPoints: 100,
+        wrongPenaltySeconds: 30,
+        skipPenaltySeconds: 60,
+        timeLimitSeconds: 480,
+      },
+    ],
+  };
+
+  it("green advances and awards points, storing the photo URL and AI reason", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(photoConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const result = engine.submitJudgement("red", "correct", {
+      reason: "Clearly shows the thing, 94% confidence",
+      photoUrl: "https://example.blob.vercel-storage.com/photo1.jpg",
+    });
+    expect(result.outcome).toBe("correct");
+    expect(result.pointsAwarded).toBe(100);
+    expect(result.nextCheckpoint?.checkpoint).toBe(2);
+  });
+
+  it("red applies the wrong-submission penalty and allows resubmission", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(photoConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const result = engine.submitJudgement("red", "incorrect", { reason: "No matching object visible" });
+    expect(result.outcome).toBe("incorrect");
+    expect(result.penaltySeconds).toBe(30);
+    expect(engine.progress("red").penaltySeconds).toBe(30);
+    expect(engine.currentCheckpoint("red")?.checkpoint).toBe(1); // still here, may retry
+
+    // Retry with a better photo succeeds.
+    const retry = engine.submitJudgement("red", "correct", { reason: "Now clearly visible" });
+    expect(retry.outcome).toBe("correct");
+  });
+
+  it("ambiguous never penalises and never advances - doc §9: goes to a human, not auto-penalised", () => {
+    const clock = createFakeClock(0);
+    const engine = new RaceEngine(photoConfig, makeTeams(), clock);
+    engine.startTeam("red");
+
+    const result = engine.submitJudgement("red", "ambiguous", { reason: "Lighting too dark to tell" });
+    expect(result.outcome).toBe("ambiguous");
+    expect(result.penaltySeconds).toBe(0);
+    expect(engine.progress("red").penaltySeconds).toBe(0); // no penalty applied
+    expect(engine.currentCheckpoint("red")?.checkpoint).toBe(1); // unchanged, can retry
+    expect(engine.events.some((e) => e.type === "checkpoint_ambiguous")).toBe(true);
+
+    // A clearer resubmission still works normally afterward.
+    const retry = engine.submitJudgement("red", "correct", { reason: "Clear now" });
+    expect(retry.outcome).toBe("correct");
+    expect(retry.nextCheckpoint?.checkpoint).toBe(2);
   });
 });

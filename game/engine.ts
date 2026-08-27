@@ -231,7 +231,8 @@ export class RaceEngine {
     checkpoint: Checkpoint,
     verdict: Verdict,
     penaltySeconds: number,
-    skipped: boolean
+    skipped: boolean,
+    options: { reason?: string; photoUrl?: string } = {}
   ): void {
     state.attempts.push({
       checkpointNumber: checkpoint.checkpoint,
@@ -240,6 +241,8 @@ export class RaceEngine {
       verdict,
       penaltySeconds,
       skipped,
+      reason: options.reason,
+      photoUrl: options.photoUrl,
     });
   }
 
@@ -270,12 +273,15 @@ export class RaceEngine {
   }
 
   /**
-   * Record the AI or organiser verdict for a photo/interaction challenge.
-   * Also the entry point a future AI-judging layer calls after grading an
-   * uploaded photo (doc §5): green/red map straight to "correct"/"incorrect",
-   * amber is resolved by an organiser before this is called.
+   * Record the AI or organiser verdict for a photo/interaction challenge
+   * (doc §5). Green ("correct") and red ("incorrect") resolve immediately.
+   * Amber ("ambiguous") never auto-penalises (doc §9: "Ambiguous AI
+   * decisions go to the organiser instead of auto-penalising") - with no
+   * admin queue built yet (Phase 6), the team instead sees why and can
+   * resubmit a clearer photo at no cost, same as a real organiser waving
+   * them to try again.
    */
-  submitJudgement(teamId: string, verdict: Verdict, reason?: string): SubmitResult {
+  submitJudgement(teamId: string, verdict: Verdict, options: { reason?: string; photoUrl?: string } = {}): SubmitResult {
     const state = this.requireState(teamId);
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
@@ -290,13 +296,18 @@ export class RaceEngine {
       type: "judgement_submitted",
       teamId,
       checkpoint: checkpoint.checkpoint,
-      data: { verdict, reason },
+      data: { verdict, reason: options.reason, photoUrl: options.photoUrl },
     });
 
-    return this.resolveAttempt(state, checkpoint, verdict);
+    return this.resolveAttempt(state, checkpoint, verdict, options);
   }
 
-  private resolveAttempt(state: TeamState, checkpoint: Checkpoint, verdict: Verdict): SubmitResult {
+  private resolveAttempt(
+    state: TeamState,
+    checkpoint: Checkpoint,
+    verdict: Verdict,
+    options: { reason?: string; photoUrl?: string } = {}
+  ): SubmitResult {
     if (verdict === "correct") {
       state.attempts.push({
         checkpointNumber: checkpoint.checkpoint,
@@ -305,20 +316,48 @@ export class RaceEngine {
         verdict: "correct",
         penaltySeconds: 0,
         skipped: false,
+        reason: options.reason,
+        photoUrl: options.photoUrl,
       });
       state.points += checkpoint.rewardPoints;
       this.log({ type: "checkpoint_passed", teamId: state.teamId, checkpoint: checkpoint.checkpoint });
       return this.advance(state.teamId, checkpoint, checkpoint.rewardPoints);
     }
 
+    if (verdict === "ambiguous") {
+      state.attempts.push({
+        checkpointNumber: checkpoint.checkpoint,
+        unlockedAtMs: state.currentUnlockedAtMs ?? this.clock.now(),
+        submittedAtMs: this.clock.now(),
+        verdict: "ambiguous",
+        penaltySeconds: 0,
+        skipped: false,
+        reason: options.reason,
+        photoUrl: options.photoUrl,
+      });
+      this.log({
+        type: "checkpoint_ambiguous",
+        teamId: state.teamId,
+        checkpoint: checkpoint.checkpoint,
+        data: { reason: options.reason },
+      });
+      return {
+        outcome: "ambiguous",
+        penaltySeconds: 0,
+        pointsAwarded: 0,
+        nextCheckpoint: checkpoint,
+        finished: false,
+      };
+    }
+
     // Wrong submission: penalty applied, team may resubmit (doc §7).
     state.penaltySeconds += checkpoint.wrongPenaltySeconds;
-    this.recordFailedAttempt(state, checkpoint, "incorrect", checkpoint.wrongPenaltySeconds, false);
+    this.recordFailedAttempt(state, checkpoint, "incorrect", checkpoint.wrongPenaltySeconds, false, options);
     this.log({
       type: "checkpoint_failed",
       teamId: state.teamId,
       checkpoint: checkpoint.checkpoint,
-      data: { penaltySeconds: checkpoint.wrongPenaltySeconds },
+      data: { penaltySeconds: checkpoint.wrongPenaltySeconds, reason: options.reason },
     });
     return {
       outcome: "incorrect",

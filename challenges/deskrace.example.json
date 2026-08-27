@@ -1,5 +1,5 @@
 {
-  "_comment": "TEST DATA ONLY, for Phase 2 'four phones can play a desk race' (doc §13). Self-checked challenge types only (trivia/observation/puzzle/navigation/qr) - photo and interaction types need Phases 4-5 (capture + AI judging) and are not usable yet. Not tied to real GPS coordinates or real Barcelona locations. Time caps are shortened from the doc's 8-minute default so the skip flow can be exercised in a short desk test.",
+  "_comment": "TEST DATA ONLY, for Phase 2 'four phones can play a desk race' (doc §13), extended in Phase 4/5 with one real photo checkpoint. Checkpoints 1-5 are self-checked (trivia/observation/puzzle/navigation/qr); checkpoint 6 is AI-judged and needs Phase 4/5's capture+upload+judging, now built. Not tied to real GPS coordinates or real Barcelona locations - all radiusMeters: 0. Time caps are shortened from the doc's 8-minute default so the skip flow can be exercised in a short desk test.",
   "checkpoints": [
     {
       "checkpoint": 1,
@@ -67,7 +67,7 @@
       "latitude": 0,
       "longitude": 0,
       "radiusMeters": 0,
-      "clue": "The finish line.",
+      "clue": "Almost there.",
       "challengeType": "qr",
       "instruction": "Type the code word: DESKRACE",
       "correctAnswer": "deskrace",
@@ -75,6 +75,21 @@
       "wrongPenaltySeconds": 30,
       "skipPenaltySeconds": 60,
       "timeLimitSeconds": 45
+    },
+    {
+      "checkpoint": 6,
+      "name": "Desk checkpoint 6 (photo)",
+      "latitude": 0,
+      "longitude": 0,
+      "radiusMeters": 0,
+      "clue": "The finish line.",
+      "challengeType": "photo",
+      "instruction": "Photograph a coffee cup or mug.",
+      "aiCriteria": ["a coffee cup or mug", "clearly visible in the photo"],
+      "rewardPoints": 100,
+      "wrongPenaltySeconds": 30,
+      "skipPenaltySeconds": 60,
+      "timeLimitSeconds": 120
     }
   ]
 }

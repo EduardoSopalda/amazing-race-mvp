@@ -161,6 +161,70 @@ export default function TeamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsGps]);
 
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoFeedback, setPhotoFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Resizing onto a canvas and re-exporting as JPEG both compresses the
+  // photo before upload and strips all EXIF metadata (including GPS) as a
+  // side effect - doc §5/§16: "Strip or ignore EXIF location after judging."
+  async function compressImage(file: File): Promise<{ base64: string; mediaType: "image/jpeg"; dataUrl: string }> {
+    const bitmap = await createImageBitmap(file);
+    const maxDim = 1280;
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("This browser can't process images.");
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+    const base64 = dataUrl.split(",")[1] ?? "";
+    return { base64, mediaType: "image/jpeg", dataUrl };
+  }
+
+  async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFeedback(null);
+    setPhotoBusy(true);
+    try {
+      const { base64, mediaType, dataUrl } = await compressImage(file);
+      setPhotoPreview(dataUrl);
+      const res = await fetch("/api/team/photo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mediaType }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPhotoFeedback({ ok: false, text: data.error ?? "Could not submit photo" });
+        return;
+      }
+      if (data.result.outcome === "correct") {
+        setPhotoFeedback({ ok: true, text: `Correct! +${data.result.pointsAwarded} points. ${data.judgement.reason}` });
+        setPhotoPreview(null);
+      } else if (data.result.outcome === "ambiguous") {
+        setPhotoFeedback({ ok: false, text: `Not sure yet - ${data.judgement.reason} Try a clearer photo.` });
+      } else {
+        setPhotoFeedback({
+          ok: false,
+          text: `Not quite. +${data.result.penaltySeconds}s penalty. ${data.judgement.reason}`,
+        });
+      }
+      setState(data.state);
+      clockOffsetRef.current = data.state.serverNowMs - Date.now();
+    } catch (err) {
+      setPhotoFeedback({ ok: false, text: (err as Error).message });
+    } finally {
+      setPhotoBusy(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  }
+
   async function submitAnswer(e: React.FormEvent) {
     e.preventDefault();
     if (!answer.trim()) return;
@@ -309,10 +373,32 @@ export default function TeamPage() {
             </form>
           ) : (
             <div className="card">
-              <p>
-                This checkpoint needs a photo or human judgement, which isn&apos;t built yet
-                (Phases 4-5). Ask the organiser to advance you manually for this desk test.
-              </p>
+              <h2>Submit a photo</h2>
+              {photoPreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photoPreview}
+                  alt="Preview of the photo just taken"
+                  style={{ width: "100%", borderRadius: 8, marginBottom: 12 }}
+                />
+              )}
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoSelected}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                className="primary"
+                disabled={photoBusy}
+                onClick={() => photoInputRef.current?.click()}
+              >
+                {photoBusy ? "Judging..." : "Take photo"}
+              </button>
+              {photoFeedback && <p className={photoFeedback.ok ? "success" : "error"}>{photoFeedback.text}</p>}
             </div>
           )}
 
