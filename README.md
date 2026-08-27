@@ -6,7 +6,7 @@ submit evidence, and compete on a server clock. Original engineering spec in
 `docs/BARCELONA-SCRIPT.md` - is adapted into `challenges/barcelona-route.json`;
 see **The real route** below for what changed in that adaptation.
 
-## Status: Phase 4/5 - Photo capture and AI judging, plus the real route
+## Status: Phase 6 - organiser dashboard, on top of the real route
 
 Per the build sequence in the concept doc (§13):
 
@@ -42,11 +42,16 @@ Checkpoint 6 is now a real `photo` checkpoint ("photograph a coffee cup or
 mug") so the whole photo pipeline is testable today without traveling
 anywhere.
 
-Still not built: the organiser dashboard (Phase 6 - manual unlock, override
-AI, a review queue for genuinely stuck ambiguous cases), and Phase 7-8
-hardening/polish. `RaceEngine.manualUnlock()` and the new
-`RaceEngine.applyPenalty()` already exist and work; there's just no admin UI
-or API route calling either yet.
+- **Phase 6 (done, minimal):** an organiser dashboard at `/admin` - live
+  status for all four teams (current checkpoint, arrived/GPS-pending,
+  penalties, points), a manual-unlock button for a team stuck on a bad GPS
+  fix or a closed location, and penalty buttons matching Gab's own rule
+  table (minor/skipped/cheating, or a custom amount + reason). Password-
+  gated by an `ORGANISER_KEY` env var - see "Organiser dashboard" below.
+
+Still not built: Phase 7-8 hardening/polish (a live map, an offline upload
+queue, duplicate-fix handling, course close). See "What's not built yet"
+below for exactly what that leaves unautomated on the real route.
 
 ## The real route
 
@@ -97,6 +102,30 @@ once with a phone to confirm each `radiusMeters` fence and GPS accuracy
 actually work at that spot - doc §1's own advice, and now there's a real
 mechanism to test it against instead of a guess.
 
+## Organiser dashboard
+
+Set an `ORGANISER_KEY` env var (any password you choose - locally in
+`.env.local`, on Vercel in Environment Variables), then open `/admin/login`.
+With no `ORGANISER_KEY` set, `/admin/login` refuses every attempt outright
+rather than defaulting open.
+
+Once logged in, `/admin` polls every 4 seconds and shows, per team: whether
+they've started, their current checkpoint and challenge type, whether GPS
+has confirmed arrival yet, penalties/skips/points, and (once finished) their
+adjusted time. Two actions:
+
+- **Manually unlock current checkpoint** - for a team stuck on a bad GPS fix
+  or a closed/inaccessible location (doc §9/§10). Disabled once already
+  arrived. Calls `RaceEngine.manualUnlock()`.
+- **Apply penalty** - Gab's own rule-table presets (minor +2min, skipped
+  +5min, deliberate cheating +10min) plus a custom seconds+reason field.
+  Calls `RaceEngine.applyPenalty()`, which requires a reason and rejects
+  negative values.
+
+This is deliberately minimal (doc §13's own bar for Phase 6: "you can
+unstick a team without touching the database") - no live map, no photo
+review queue, no synchronised start button. See "What's not built yet".
+
 ```
 game/
   types.ts     Checkpoint, Team, TeamState, GameEvent, LeaderboardEntry,
@@ -119,6 +148,10 @@ lib/
   photoJudge.ts  judgePhoto(): vision call + structured output (zod) ->
                  {verdict, confidence, reason}
   blobStore.ts   uploadPhoto(): Vercel Blob, or null when unconfigured
+  adminAuth.ts   the organiser cookie name + isValidAdminCookie() (checked
+                 against ORGANISER_KEY on every admin request)
+  adminState.ts  buildAdminSnapshot(): per-team status for the dashboard,
+                 including each team's last GPS event
 app/
   page.tsx                 landing
   team/login/page.tsx      PIN login
@@ -126,6 +159,8 @@ app/
                             countdown/submit/skip once arrived, camera
                             capture for photo/interaction checkpoints
   leaderboard/page.tsx     public read-only standings
+  admin/login/page.tsx     organiser password login
+  admin/page.tsx           organiser dashboard - see "Organiser dashboard"
   api/teams                GET public team list
   api/team/login           POST {teamId, pin} -> sets session cookie, starts clock
   api/team/state           GET current race state for the logged-in team
@@ -135,6 +170,11 @@ app/
   api/team/skip             POST skip (only once arrived AND the time cap has passed)
   api/team/logout          POST clears the session cookie
   api/leaderboard          GET public standings
+  api/admin/login          POST {password} -> sets organiser session cookie
+  api/admin/logout         POST clears the organiser session cookie
+  api/admin/teams          GET status of every team (organiser only)
+  api/admin/unlock         POST {teamId} -> RaceEngine.manualUnlock()
+  api/admin/penalty        POST {teamId, seconds, reason} -> RaceEngine.applyPenalty()
 challenges/
   teams.example.json       TEST DATA - 4 example teams with PINs (desk-race)
   deskrace.example.json    TEST DATA - 6 checkpoints: 5 self-checked
@@ -162,7 +202,9 @@ For local photo judging you need `ANTHROPIC_API_KEY` set (get one at
 `.env.local` (gitignored). Without it, self-checked and GPS checkpoints
 still work; the photo checkpoint's AI call will fail with a clear error.
 `BLOB_READ_WRITE_TOKEN` is optional locally - without it, photos are judged
-but not durably stored (`photoUrl: null` in the response).
+but not durably stored (`photoUrl: null` in the response). Set
+`ORGANISER_KEY` in `.env.local` too if you want to try the dashboard at
+`/admin/login` locally - any password you choose.
 
 For a real desk race across four phones on one Wi-Fi network: run
 `npm run dev` on your laptop, find its LAN IP (e.g. `ipconfig getifaddr en0`
@@ -188,28 +230,32 @@ Redis instead whenever it's configured:
    judged photos are kept for the dispute record - Vercel injects
    `BLOB_READ_WRITE_TOKEN` automatically. Without it, photos are still
    judged, just not stored.
-5. When you're ready for the real event (not before), add `RACE_ROUTE` =
+5. Add `ORGANISER_KEY` (any password) so `/admin/login` works - see
+   "Organiser dashboard" above.
+6. When you're ready for the real event (not before), add `RACE_ROUTE` =
    `barcelona` to switch off the desk-race data - see "The real route" above.
-6. Deploy (or redeploy after adding the env vars above).
+7. Deploy (or redeploy after adding the env vars above).
 
 ## Limits of this phase
 
 - **No organiser queue for ambiguous photos.** Doc §5/§9 says amber cases go
-  to a human. With no admin dashboard yet, "ambiguous" instead applies no
-  penalty and lets the team retake the photo - a reasonable stand-in for a
-  4x4 pilot, but not the real design. `RaceEngine.manualUnlock()` is ready
-  for Phase 6 to build a real queue on top of.
+  to a human. "Ambiguous" still just applies no penalty and lets the team
+  retake the photo, rather than landing in a queue for you to resolve on the
+  dashboard - a reasonable stand-in for a 4x4 pilot, but not the real design.
 - **No synchronised staggered start.** The real event has an organiser start
   all teams together (doc §15); here each team's clock starts the moment
-  they log in. A "start the race" admin control is Phase 6.
-- **Session cookie is not hardened.** It stores the team ID directly after a
-  correct PIN check - fine for a friendly one-off event on trusted phones,
-  not a security boundary.
+  they log in. The dashboard has no "start the race" button.
+- **Admin session is as lightly secured as the team one.** The organiser
+  cookie holds `ORGANISER_KEY` itself - fine for a friendly one-off event
+  where only you have the password, not a security boundary against someone
+  who obtains it.
+- **Session cookie is not hardened.** Same caveat for teams: it stores the
+  team ID directly after a correct PIN check.
 - **Redis is one shared key, not a queryable database.** `withEngine()`
-  reads and rewrites a single JSON blob per request - fine for a 4x4 pilot,
-  but doc §11's fuller Postgres/Supabase model (separate tables for teams,
-  events, submissions) is still the right call once an admin dashboard
-  needs to query history (Phase 6).
+  reads and rewrites a single JSON blob per request - fine for a 4x4 pilot
+  and for the dashboard's live-status view, but doc §11's fuller
+  Postgres/Supabase model (separate tables for teams, events, submissions)
+  would be needed for a real queryable history or a live map.
 - **AI judging cost.** Each photo submission is one `claude-opus-5` vision
   call. Budget for it (doc §11 flags this explicitly) - a lower-cost model
   is a reasonable swap in `lib/photoJudge.ts` if per-photo cost matters more
@@ -218,15 +264,16 @@ Redis instead whenever it's configured:
 
 ## What's not built yet
 
-The organiser dashboard (Phase 6 - live map, leaderboard review queue,
-manual unlock, override AI, a UI for `applyPenalty` - the engine methods
-exist, the UI doesn't), branching Detours (a real choice between two
-challenges), multi-photo checkpoints (submit several photos as one gated
-step), cross-team bonuses (best photo, completion order - need comparing
-teams against each other, which the engine doesn't do), and video
-submissions (AI judging is photo-only right now). See "The real route"
-above for exactly which stops that affects today, and `docs/CONCEPT.md`
-§13 for the original phase list.
+Beyond the minimal dashboard: a live map, a photo review queue (for
+ambiguous verdicts, or just to eyeball submissions), a "start the race"
+button for a synchronised staggered start, and Phase 7-8 hardening (offline
+upload queue, duplicate-fix handling, course close). Also still missing:
+branching Detours (a real choice between two challenges), multi-photo
+checkpoints (submit several photos as one gated step), cross-team bonuses
+(best photo, completion order - need comparing teams against each other,
+which the engine doesn't do), and video submissions (AI judging is
+photo-only right now). See "The real route" above for exactly which stops
+that affects today, and `docs/CONCEPT.md` §13 for the original phase list.
 
 `challenges/deskrace.example.json` and `barcelona.example.json` remain test
 placeholders. `challenges/barcelona-route.json` is the real event route -
