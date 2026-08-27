@@ -1,0 +1,9 @@
+{
+  "_comment": "TEST DATA ONLY. PINs are placeholders for local desk-race testing - change them before any real event.",
+  "teams": [
+    { "id": "red", "name": "Red", "colour": "#c0392b", "pin": "1111" },
+    { "id": "blue", "name": "Blue", "colour": "#2980b9", "pin": "2222" },
+    { "id": "green", "name": "Green", "colour": "#27ae60", "pin": "3333" },
+    { "id": "yellow", "name": "Yellow", "colour": "#d4a017", "pin": "4444" }
+  ]
+}

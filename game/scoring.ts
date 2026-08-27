@@ -1,4 +1,4 @@
-import type { LeaderboardEntry } from "./types.js";
+import type { LeaderboardEntry } from "./types";
 
 /**
  * Adjusted time = (finish clock - start clock) + penalty seconds + skip seconds.

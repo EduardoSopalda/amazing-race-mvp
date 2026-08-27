@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createFakeClock } from "../game/clock.js";
-import { RaceEngine } from "../game/engine.js";
-import type { RaceConfig, Team } from "../game/types.js";
+import { createFakeClock } from "../game/clock";
+import { RaceEngine } from "../game/engine";
+import type { RaceConfig, Team } from "../game/types";
 
 const config: RaceConfig = {
   checkpoints: [

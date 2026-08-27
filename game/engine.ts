@@ -1,5 +1,5 @@
-import { systemClock, type Clock } from "./clock.js";
-import { adjustedTimeSeconds, rankLeaderboard } from "./scoring.js";
+import { systemClock, type Clock } from "./clock";
+import { adjustedTimeSeconds, rankLeaderboard } from "./scoring";
 import {
   SELF_CHECKED_TYPES,
   type Checkpoint,
@@ -10,7 +10,7 @@ import {
   type Team,
   type TeamState,
   type Verdict,
-} from "./types.js";
+} from "./types";
 
 function normaliseAnswer(value: string): string {
   return value.trim().toLowerCase();
@@ -65,6 +65,23 @@ export class RaceEngine {
     return this.requireTeam(teamId).pin === pin;
   }
 
+  /** Team name/colour only - never expose PINs to a client. */
+  publicTeams(): Array<{ id: string; name: string; colour: string }> {
+    return [...this.teamsById.values()].map(({ id, name, colour }) => ({ id, name, colour }));
+  }
+
+  hasStarted(teamId: string): boolean {
+    this.requireTeam(teamId);
+    return this.stateByTeam.has(teamId);
+  }
+
+  /** 1-based position of the current checkpoint, e.g. 3 of 10. Null once finished. */
+  checkpointPosition(teamId: string): { index: number; total: number } | null {
+    const state = this.requireState(teamId);
+    if (state.finishedAtMs !== null) return null;
+    return { index: state.currentIndex + 1, total: this.config.checkpoints.length };
+  }
+
   startTeam(teamId: string): void {
     this.requireTeam(teamId);
     if (this.stateByTeam.has(teamId)) {
@@ -98,6 +115,11 @@ export class RaceEngine {
     const state = this.requireState(teamId);
     if (state.currentUnlockedAtMs === null) return 0;
     return (this.clock.now() - state.currentUnlockedAtMs) / 1000;
+  }
+
+  /** Server timestamp the current checkpoint's clue unlocked, for client-side countdowns. */
+  currentUnlockedAtMs(teamId: string): number | null {
+    return this.requireState(teamId).currentUnlockedAtMs;
   }
 
   /** Skip is only offered once the challenge time cap has passed (doc §3, §7). */
@@ -271,6 +293,23 @@ export class RaceEngine {
     const checkpoint = this.currentCheckpoint(teamId);
     if (!checkpoint) throw new Error(`Team "${teamId}" has already finished`);
     this.log({ type: "manual_unlock", teamId, checkpoint: checkpoint.checkpoint });
+  }
+
+  progress(teamId: string): {
+    startedAtMs: number | null;
+    finishedAtMs: number | null;
+    penaltySeconds: number;
+    skipSeconds: number;
+    points: number;
+  } {
+    const state = this.requireState(teamId);
+    return {
+      startedAtMs: state.startedAtMs,
+      finishedAtMs: state.finishedAtMs,
+      penaltySeconds: state.penaltySeconds,
+      skipSeconds: state.skipSeconds,
+      points: state.points,
+    };
   }
 
   adjustedTimeSeconds(teamId: string): number | null {
