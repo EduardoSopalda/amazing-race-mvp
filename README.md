@@ -6,7 +6,7 @@ submit evidence, and compete on a server clock. Original engineering spec in
 `docs/BARCELONA-SCRIPT.md` - is adapted into `challenges/barcelona-route.json`;
 see **The real route** below for what changed in that adaptation.
 
-## Status: Phase 6 - organiser dashboard, on top of the real route
+## Status: Phase 7 hardening, on top of the real route and dashboard
 
 Per the build sequence in the concept doc (§13):
 
@@ -52,9 +52,26 @@ anywhere.
   reasoning, with buttons to force it correct or incorrect. Password-gated
   by an `ORGANISER_KEY` env var - see "Organiser dashboard" below.
 
-Still not built: Phase 7-8 hardening/polish (a live map, an offline upload
-queue, duplicate-fix handling, course close). See "What's not built yet"
-below for exactly what that leaves unautomated on the real route.
+- **Phase 7 (started):** hardening for "a walk-through in Barcelona doesn't
+  need a laptop rescue" (doc §13). Every player submission (`submit`,
+  `skip`, and especially `photo` - the largest, slowest payload) now
+  retries automatically on a network failure or 5xx, with backoff, up to 3
+  attempts. A photo that still fails after that isn't lost or force a
+  retake: it's kept client-side and a "Retry upload" button resends the
+  exact same compressed image once signal returns. A 4xx (bad request,
+  wrong checkpoint type) fails immediately instead of retrying, since
+  retrying a request the server already understood and rejected wastes
+  time without changing the outcome. Verified with Playwright simulating a
+  dropped connection: an upload that fails twice then succeeds never shows
+  the retry button (silent auto-recovery); one that fails all three
+  attempts shows it, preserves the photo, and a manual retry after
+  "signal returns" completes normally.
+
+Still not built: the rest of Phase 7 (duplicate-fix handling, GPS drift
+mitigation, poor-signal detection during GPS reporting itself) and Phase 8
+polish (a live map, richer challenge types, course close). See "What's not
+built yet" below for exactly what that leaves unautomated on the real
+route.
 
 ## The real route
 
@@ -283,15 +300,26 @@ Redis instead whenever it's configured:
 Beyond the minimal dashboard: a live map, a review *queue* (today you can
 override the current checkpoint for a team you're already looking at, but
 there's no single list of every ambiguous submission across all four teams
-to work through), a "start the race" button for a synchronised staggered
-start, and Phase 7-8 hardening (offline upload queue, duplicate-fix
-handling, course close). Also still missing: branching Detours (a real
-choice between two challenges), multi-photo checkpoints (submit several
-photos as one gated step), cross-team bonuses (best photo, completion order
-- need comparing teams against each other, which the engine doesn't do),
-and video submissions (AI judging is photo-only right now). See "The real
-route" above for exactly which stops that affects today, and
-`docs/CONCEPT.md` §13 for the original phase list.
+to work through), and a "start the race" button for a synchronised
+staggered start.
+
+What Phase 7 still needs beyond the retry/backoff hardening already done:
+a **true offline queue** - the current retry logic covers a connection that
+comes back within a few seconds (three attempts, a few hundred ms to a few
+seconds apart); it does not queue a submission while the phone has *no*
+signal at all for longer than that, or survive a page reload/app close
+mid-upload. Also: duplicate-submission dedup at the server (a double-tap is
+currently only prevented client-side, by disabling the button while
+`busy`), and GPS drift/poor-signal detection beyond the existing accuracy
+gate.
+
+Also still missing: branching Detours (a real choice between two
+challenges), multi-photo checkpoints (submit several photos as one gated
+step), cross-team bonuses (best photo, completion order - need comparing
+teams against each other, which the engine doesn't do), and video
+submissions (AI judging is photo-only right now). See "The real route"
+above for exactly which stops that affects today, and `docs/CONCEPT.md`
+§13 for the original phase list.
 
 `challenges/deskrace.example.json` and `barcelona.example.json` remain test
 placeholders. `challenges/barcelona-route.json` is the real event route -

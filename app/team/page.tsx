@@ -11,6 +11,46 @@ function formatSeconds(totalSeconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface PostResult {
+  ok: boolean;
+  /** 0 means every attempt failed to get a real response - network down or persistent 5xx. */
+  status: number;
+  data: Record<string, unknown> & { error?: string };
+}
+
+/**
+ * A checkpoint submission - especially a multi-hundred-KB photo - has to
+ * survive a flaky connection in the Gothic Quarter, not just a fast one
+ * (doc §4: "Design for urban GPS, crowds, closed doors"; Phase 4's own bar
+ * was "a photo survives a flaky connection"). Retries network failures and
+ * 5xx server errors with backoff; a 4xx (bad request, wrong checkpoint
+ * type, not logged in) is the server telling us retrying won't help, so it
+ * returns immediately instead of wasting attempts.
+ */
+async function postJsonWithRetry(url: string, body: unknown, attempts = 3): Promise<PostResult> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok || res.status < 500) {
+        return { ok: res.ok, status: res.status, data };
+      }
+    } catch {
+      // Network failure - fall through to retry.
+    }
+    if (i < attempts - 1) await sleep(500 * 2 ** i);
+  }
+  return { ok: false, status: 0, data: {} };
+}
+
 type GpsStatus =
   | { kind: "unsupported" }
   | { kind: "denied" }
@@ -164,6 +204,10 @@ export default function TeamPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoFeedback, setPhotoFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  // Kept only while an upload hasn't actually reached the server (network
+  // failure or 5xx after retries) - lets "Retry upload" resend without
+  // making the team retake and recompose the photo.
+  const [pendingPhoto, setPendingPhoto] = useState<{ base64: string; mediaType: "image/jpeg" } | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Resizing onto a canvas and re-exporting as JPEG both compresses the
@@ -186,41 +230,56 @@ export default function TeamPage() {
     return { base64, mediaType: "image/jpeg", dataUrl };
   }
 
+  async function submitPhoto(base64: string, mediaType: "image/jpeg") {
+    setPhotoFeedback(null);
+    setPhotoBusy(true);
+    try {
+      const { ok, status, data } = await postJsonWithRetry("/api/team/photo", { imageBase64: base64, mediaType });
+
+      if (status === 0) {
+        // Every attempt failed to get a real response - keep the photo so
+        // "Retry upload" can resend it once the connection recovers.
+        setPendingPhoto({ base64, mediaType });
+        setPhotoFeedback({ ok: false, text: "Upload failed - check your connection, then tap Retry upload." });
+        return;
+      }
+      setPendingPhoto(null);
+      if (!ok) {
+        setPhotoFeedback({ ok: false, text: data.error ?? "Could not submit photo" });
+        return;
+      }
+
+      const result = data.result as { outcome: string; pointsAwarded: number; penaltySeconds: number };
+      const judgement = data.judgement as { reason: string };
+      if (result.outcome === "correct") {
+        setPhotoFeedback({ ok: true, text: `Correct! +${result.pointsAwarded} points. ${judgement.reason}` });
+        setPhotoPreview(null);
+      } else if (result.outcome === "ambiguous") {
+        setPhotoFeedback({ ok: false, text: `Not sure yet - ${judgement.reason} Try a clearer photo.` });
+      } else {
+        setPhotoFeedback({
+          ok: false,
+          text: `Not quite. +${result.penaltySeconds}s penalty. ${judgement.reason}`,
+        });
+      }
+      setState(data.state as TeamStatePayload);
+      clockOffsetRef.current = (data.state as TeamStatePayload).serverNowMs - Date.now();
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoFeedback(null);
-    setPhotoBusy(true);
     try {
       const { base64, mediaType, dataUrl } = await compressImage(file);
       setPhotoPreview(dataUrl);
-      const res = await fetch("/api/team/photo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mediaType }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setPhotoFeedback({ ok: false, text: data.error ?? "Could not submit photo" });
-        return;
-      }
-      if (data.result.outcome === "correct") {
-        setPhotoFeedback({ ok: true, text: `Correct! +${data.result.pointsAwarded} points. ${data.judgement.reason}` });
-        setPhotoPreview(null);
-      } else if (data.result.outcome === "ambiguous") {
-        setPhotoFeedback({ ok: false, text: `Not sure yet - ${data.judgement.reason} Try a clearer photo.` });
-      } else {
-        setPhotoFeedback({
-          ok: false,
-          text: `Not quite. +${data.result.penaltySeconds}s penalty. ${data.judgement.reason}`,
-        });
-      }
-      setState(data.state);
-      clockOffsetRef.current = data.state.serverNowMs - Date.now();
+      await submitPhoto(base64, mediaType);
     } catch (err) {
       setPhotoFeedback({ ok: false, text: (err as Error).message });
     } finally {
-      setPhotoBusy(false);
       if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
@@ -231,24 +290,24 @@ export default function TeamPage() {
     setBusy(true);
     setFeedback(null);
     try {
-      const res = await fetch("/api/team/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, status, data } = await postJsonWithRetry("/api/team/submit", { answer });
+      if (status === 0) {
+        setFeedback({ ok: false, text: "Could not reach the race server - check your connection and try again." });
+        return;
+      }
+      if (!ok) {
         setFeedback({ ok: false, text: data.error ?? "Could not submit" });
         return;
       }
       setAnswer("");
-      if (data.result.outcome === "correct") {
-        setFeedback({ ok: true, text: `Correct! +${data.result.pointsAwarded} points.` });
+      const result = data.result as { outcome: string; pointsAwarded: number; penaltySeconds: number };
+      if (result.outcome === "correct") {
+        setFeedback({ ok: true, text: `Correct! +${result.pointsAwarded} points.` });
       } else {
-        setFeedback({ ok: false, text: `Not quite. +${data.result.penaltySeconds}s penalty. Try again.` });
+        setFeedback({ ok: false, text: `Not quite. +${result.penaltySeconds}s penalty. Try again.` });
       }
-      setState(data.state);
-      clockOffsetRef.current = data.state.serverNowMs - Date.now();
+      setState(data.state as TeamStatePayload);
+      clockOffsetRef.current = (data.state as TeamStatePayload).serverNowMs - Date.now();
     } finally {
       setBusy(false);
     }
@@ -258,15 +317,19 @@ export default function TeamPage() {
     setBusy(true);
     setFeedback(null);
     try {
-      const res = await fetch("/api/team/skip", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, status, data } = await postJsonWithRetry("/api/team/skip", {});
+      if (status === 0) {
+        setFeedback({ ok: false, text: "Could not reach the race server - check your connection and try again." });
+        return;
+      }
+      if (!ok) {
         setFeedback({ ok: false, text: data.error ?? "Cannot skip yet" });
         return;
       }
-      setFeedback({ ok: false, text: `Skipped. +${data.result.penaltySeconds}s penalty.` });
-      setState(data.state);
-      clockOffsetRef.current = data.state.serverNowMs - Date.now();
+      const result = data.result as { penaltySeconds: number };
+      setFeedback({ ok: false, text: `Skipped. +${result.penaltySeconds}s penalty.` });
+      setState(data.state as TeamStatePayload);
+      clockOffsetRef.current = (data.state as TeamStatePayload).serverNowMs - Date.now();
     } finally {
       setBusy(false);
     }
@@ -396,8 +459,19 @@ export default function TeamPage() {
                 disabled={photoBusy}
                 onClick={() => photoInputRef.current?.click()}
               >
-                {photoBusy ? "Judging..." : "Take photo"}
+                {photoBusy ? "Uploading..." : "Take photo"}
               </button>
+              {pendingPhoto && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ marginTop: 8 }}
+                  disabled={photoBusy}
+                  onClick={() => submitPhoto(pendingPhoto.base64, pendingPhoto.mediaType)}
+                >
+                  {photoBusy ? "Retrying..." : "Retry upload"}
+                </button>
+              )}
               {photoFeedback && <p className={photoFeedback.ok ? "success" : "error"}>{photoFeedback.text}</p>}
             </div>
           )}
