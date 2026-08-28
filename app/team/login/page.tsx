@@ -72,8 +72,9 @@ export default function LoginPage() {
       </div>
 
       <form id="login-form" className="brief" onSubmit={handleSubmit}>
+        <div className="mark">GL<br />BCN</div>
         <div className="id">
-          <span>GL-BCN · DOSSIER</span>
+          <span>CASE GL-BCN-000</span>
           <span>OFFICIAL DEVICE</span>
         </div>
         <h1>OPEN THE

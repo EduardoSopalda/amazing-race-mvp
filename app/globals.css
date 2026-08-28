@@ -661,3 +661,26 @@ td {
   .intel { display: none; }
   .dossier .clue { font-size: 1.05rem; }
 }
+
+/* Landing's one-time "tuning into a live signal" reveal - the tele-top
+   line types in, then LIVE EVENT fades in behind it. Confined to the
+   landing page only; login and the racing screens stay instant, since a
+   typing delay on every checkpoint would slow the actual game down. */
+.hidden { visibility: hidden; }
+.cursor {
+  display: inline-block;
+  margin-left: 1px;
+  animation: blink 1s step-end infinite;
+}
+.fade-in { animation: fadeIn 0.4s ease both; }
+@keyframes blink {
+  50% { opacity: 0; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cursor { animation: none; opacity: 0; }
+  .fade-in { animation: none; }
+}

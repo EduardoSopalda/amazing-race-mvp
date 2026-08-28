@@ -226,6 +226,49 @@ with the calls made on the previous skin:
   before - the verdict heading text carries the meaning regardless of
   colour.
 
+### Threading the landing page into the rest of the game
+
+Follow-up request after seeing the framed logo live: make the opening
+feel cohesive and memorable, make players want to look closer, and tie
+it visibly to the rest of the game rather than just looking better in
+isolation. Three concrete, connected changes, all on `/` and
+`/team/login` only - the racing screens stay exactly as fast as they
+already were, deliberately:
+
+- **A real "tuning into a live signal" moment on `/`.** The `GAB LAB /
+  BARCELONA` line types out character by character on load (a blinking
+  `.cursor`), then `LIVE EVENT` fades in - a one-time first-contact
+  moment, not a persistent animation. Skips straight to the finished
+  text under `prefers-reduced-motion`, confirmed by rendering with
+  `reducedMotion: "reduce"` and checking `.cursor` never mounts, not
+  just by reading the media query. The full string is in the DOM via
+  `aria-label` regardless of animation state, so a screen reader is
+  never stuck waiting on it - only the visible span types progressively.
+  Login and the racing screens stay instant on purpose: a typing delay
+  on every checkpoint would slow the actual game down, so the moment is
+  spent once, on the one screen a player sees before anything else.
+- **The same ghost watermark every checkpoint dossier already uses**
+  (`.mark`, the faint oversized corner text) now also sits on `/` and
+  `/team/login`'s `.brief` cards. It's the same CSS class, not a
+  lookalike - the literal device a player will recognise from every
+  checkpoint card for the rest of the race, seen here first.
+- **A sequential case number** threading the whole flow: `/` and
+  `/team/login` both read `CASE GL-BCN-000`; the first checkpoint reads
+  `GL-BCN-01`, the next `GL-BCN-02`, and so on - a number that visibly
+  advances every stop, tying the pre-race briefing to checkpoint one
+  onward instead of every dossier card starting its own count. Also
+  added one honestly-true teaser line to the landing brief -
+  `ROUTE · SEALED UNTIL ARRIVAL` - since the actual game already works
+  that way (`.dossier` never shows a real clue before GPS confirms
+  arrival); the copy just says so up front instead of only being
+  discovered mid-race.
+
+Verified: the typing animation at both a mid-progress frame and settled,
+`prefers-reduced-motion` (no cursor, full text immediately), `/` and
+`/team/login` at a normal and short (375x667) viewport, and a re-run of
+the racing walkthrough to confirm none of this touched the already-
+verified in-race screens.
+
 ## The real route
 
 `challenges/barcelona-route.json` (paired with `challenges/teams.barcelona.json`)
