@@ -545,20 +545,18 @@ td {
    .dossier/.brief, desaturated + darkened) and shrinking it folds it
    into the same "official document" world instead of sitting on top of
    it - the artwork itself is untouched, only how it's presented here. */
+/* No card here on purpose - a first attempt gave this a background/
+   border/box-shadow "frame" like .dossier/.brief, but the frame's own
+   gradient (#1a1922 at the top) sits visibly lighter than the page's
+   var(--black) (#101014), so on a true black screen it read as a floating
+   box around the logo rather than the logo sitting on the page. The
+   artwork is transparent and already reads as an emblem on its own -
+   this is just a sizing wrapper now, no surface of its own. */
 .logo-frame {
   position: relative;
   width: min(230px, 68%);
   margin: 10px auto 10px;
-  padding: 12px 12px 10px;
-  background: linear-gradient(180deg, #1a1922, #101014 70%);
-  border: 1px solid #2a2830;
-  border-radius: 6px;
-  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.6), 0 10px 22px rgba(0, 0, 0, 0.4);
 }
-/* Deliberately no corner brackets here, unlike .dossier/.brief - on a
-   busy photographic image those read as crop/viewfinder marks (like the
-   artwork is being cut off), not as "official document" framing. They
-   work on the text-based paper cards; they didn't work on the logo. */
 .logo-frame img {
   display: block;
   width: 100%;
