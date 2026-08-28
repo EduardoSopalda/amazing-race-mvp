@@ -695,3 +695,84 @@ td {
   .cursor { animation: none; opacity: 0; }
   .fade-in { animation: none; }
 }
+
+/* ============================================================
+   Leaderboard skin ("the board") - a second pack, sent after the
+   original gab-lab-final drop, for the one page it didn't cover.
+   Reuses .phone for the shell and .tele/.tele-top/.live for the
+   header, exactly like landing and login. Everything else is new,
+   scoped under .board-* so nothing here can collide with the racing
+   screen's own .dossier/.verdict components.
+
+   .board-rail is deliberately its own class rather than reusing
+   .rail - .rail is the racing screen's full-height page spine
+   (grid-row:1/-1, 0.78rem/0.22em type, set from an ancestor's
+   [data-team] attribute); this is a small per-row tag inside a card
+   (0.62rem/0.18em, coloured via its own row's --team). Same idea,
+   different element - sharing the class would have pulled in the
+   wrong size and grid placement. */
+.board-title {
+  font-family: var(--display);
+  font-size: 2.2rem;
+  letter-spacing: 0.08em;
+  margin: 10px 0 4px;
+  line-height: 0.95;
+}
+.board-sub {
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  color: var(--bcn);
+  margin: 0 0 14px;
+}
+.board-list { display: flex; flex-direction: column; }
+.board-row {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 10px;
+  align-items: stretch;
+  background: #16161c;
+  margin-bottom: 8px;
+  min-height: 64px;
+}
+.board-rail {
+  background: var(--team, var(--signal));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: var(--display);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  color: #fff;
+}
+.board-mid { padding: 8px 0; min-width: 0; }
+.board-name {
+  font-family: var(--display);
+  font-size: 1.35rem;
+  letter-spacing: 0.08em;
+  color: var(--team, #fff);
+}
+.board-prog {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  color: var(--mute);
+  margin-top: 2px;
+}
+.board-bar { height: 2px; background: #2a2a32; margin-top: 6px; }
+.board-bar i { display: block; height: 100%; width: var(--you, 0%); background: var(--team); }
+.board-stats {
+  padding: 8px 10px 8px 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.board-time { color: var(--yellow); font-weight: 700; font-size: 0.95rem; }
+.board-pts { color: var(--bcn); font-size: 0.58rem; letter-spacing: 0.1em; margin-top: 2px; }
+.board-row[data-state="finished"] .board-time { color: #efeaf2; }
+.board-back {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+}
+.board-back a { color: var(--mute); text-decoration: none; }

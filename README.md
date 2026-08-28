@@ -109,8 +109,9 @@ a black/paper/yellow "race dossier" identity (Bebas Neue display,
 Fraunces serif clue text, IBM Plex Mono telemetry) across `/`,
 `/team/login`, and `/team`, replacing an earlier "torn route envelope"
 skin entirely (see git history if you need it - it's gone from the
-working tree, not layered underneath). `/admin` and `/leaderboard` are
-still the original plain dark UI, untouched, on purpose.
+working tree, not layered underneath). `/admin` is still the original
+plain dark UI, untouched, on purpose. `/leaderboard` was too, until a
+second pack arrived to cover it - see "The board" below.
 
 **Shape.** `/team` uses `.rig` - a CSS grid with an 18px team-colour
 `.rail` down the left edge, then `.tele` (telemetry header: `GAB LAB /
@@ -225,6 +226,50 @@ with the calls made on the previous skin:
 - **Team Red's rail colour (`#e94b5f`) left as-is**, same reasoning as
   before - the verdict heading text carries the meaning regardless of
   colour.
+
+### The board: `/leaderboard` catches up to the rest of the skin
+
+The original gab-lab-final drop covered `/`, `/team/login`, and `/team`
+but never mentioned `/leaderboard` - it stayed on the plain dark UI while
+everything else moved to the dossier identity. A second, smaller pack
+(`barcelona-race-leaderboard.html` + a suggested `leaderboard-page.tsx`)
+arrived afterward to close that gap, matching the same black/paper/yellow
+system: one card per team, a team-colour rail tag, a name in Bebas Neue,
+a thin progress bar, and time/points lined up on the right.
+
+**Scoped under `.board-*`, deliberately not sharing names with `/team`'s
+own components.** The pack's own mock reused `.rail` for each row's small
+vertical team tag - but `.rail` already means something specific in this
+codebase: the racing screen's full-height page spine (`grid-row:1/-1`,
+0.78rem/0.22em type, coloured from an ancestor's `[data-team]`
+attribute). Sharing the name would have pulled that sizing and grid
+placement into a small tag sitting inside an ordinary card. Renamed to
+`.board-rail` (and everything else in the row to `.board-mid`,
+`.board-name`, `.board-prog`, `.board-bar`, `.board-stats`, `.board-time`,
+`.board-pts`) - same visual result the pack drew, no collision with the
+racing screen's CSS.
+
+**Reuses what already existed instead of re-implementing it.** The page
+is a plain `.phone` (same shell as `/` and `/team/login` - safe-area
+padding, the keyboard-aware height variable, scroll-if-content-doesn't-
+fit) with the same `.tele`/`.tele-top`/`.live` header markup, not a new
+shell. `.error` for the fetch-failure message is the same class every
+other page already uses. Each row still gets its colour from the
+`/api/leaderboard` response's own `colour` field (same value `/admin`'s
+dot already shows), set as an inline `--team` custom property - not from
+the `[data-team="red"]`-style rules already in the stylesheet, which
+carry a *different* palette used only for the racing screen's rail and
+would have made the board's team colours quietly disagree with the
+dashboard's.
+
+Verified with real state, not just the empty board: started two teams
+through `/api/team/login`, pushed one to 5/6 checkpoints and another to a
+fresh 0/6 via `/api/team/submit`, then - with `photoJudge.ts` stubbed to
+a canned "correct" verdict, same swap-test-restore technique as every
+other AI-judged check in this log - finished the leaderboard leader
+outright to confirm the `finished` state (full bar, white time instead of
+yellow "RACING", "FINISHED" progress label). All three states, plus the
+2-team and 4-team layouts, checked visually at 390px before this shipped.
 
 ### Threading the landing page into the rest of the game
 
