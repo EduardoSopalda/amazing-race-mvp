@@ -520,11 +520,36 @@ td {
 
 /* Landing / login - a simpler flex shell, no team rail (no team is
    confirmed yet at either point). */
-.logo {
+/* Gab's logo is a glossy, photorealistic, richly-coloured mark - pasted
+   straight onto the flat black/cream/yellow dossier system at full size
+   it read as two different things sharing a screen, not one identity.
+   Framing it like a sealed badge (dark card, corner marks matching
+   .dossier/.brief, desaturated + darkened) and shrinking it folds it
+   into the same "official document" world instead of sitting on top of
+   it - the artwork itself is untouched, only how it's presented here. */
+.logo-frame {
+  position: relative;
+  width: min(230px, 68%);
+  margin: 16px auto 14px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(180deg, #1a1922, #101014 70%);
+  border: 1px solid #2a2830;
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.6), 0 10px 22px rgba(0, 0, 0, 0.4);
+}
+.logo-frame::before,
+.logo-frame::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--mute);
+}
+.logo-frame::before { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+.logo-frame::after { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+.logo-frame img {
   display: block;
-  width: min(320px, 86%);
-  margin: 18px auto 14px;
-  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.45));
+  width: 100%;
+  filter: saturate(0.72) brightness(0.92) contrast(1.05) drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
 }
 .brief {
   background: var(--paper);

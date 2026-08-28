@@ -159,6 +159,25 @@ the black UI. Reused the transparent PNG/WebP from the earlier skin
 instead (same artwork) - same intent as "do not restyle the mark," just
 without shipping a background that clearly wasn't the point.
 
+The pack's own instruction was explicit - "the colorful mark is the
+event logo, the UI stays black/cream/yellow, do not restyle the mark" -
+and at first that's exactly what shipped: the full-size, full-saturation
+logo sitting directly on the flat dossier card. Live, on a real phone, it
+read as two different things sharing a screen - a glossy photorealistic
+game-cover graphic stacked on a flat monospace field-ops interface - not
+one identity. Following the brief correctly isn't the same as it working
+once you actually see it at size, and this didn't.
+
+Reworked into `.logo-frame`: a dark bordered card with the same corner
+marks as `.dossier`/`.brief`, holding a smaller (`min(230px, 68%)`,
+down from `min(320px, 86%)`), desaturated and darkened version of the
+same artwork (`saturate(.72) brightness(.92) contrast(1.05)`, plus a
+drop-shadow) - the mark itself is untouched, only how it's presented.
+It now reads as a sealed badge that's part of the dossier system, not a
+sticker pasted on top of it. Verified on `/` and `/team/login` at a
+normal and a short (375x667) viewport - the smaller logo actually helped
+the short-viewport case, leaving more room before the button.
+
 Two real bugs, found by rendering the actual pack files and the real app
 with real data, not by reading the CSS - plus one thing worth naming that
 this pack got *right* where the previous one didn't:

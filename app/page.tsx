@@ -22,11 +22,13 @@ export default function HomePage() {
         </div>
       </div>
 
-      <picture>
-        <source srcSet="/amazing-race-logo.webp" type="image/webp" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="logo" src="/amazing-race-logo.png" alt="The Amazing Race Barcelona - Gab Lab Edition" />
-      </picture>
+      <div className="logo-frame">
+        <picture>
+          <source srcSet="/amazing-race-logo.webp" type="image/webp" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/amazing-race-logo.png" alt="The Amazing Race Barcelona - Gab Lab Edition" />
+        </picture>
+      </div>
 
       <article className="brief">
         <div className="id">
