@@ -269,6 +269,47 @@ Verified: the typing animation at both a mid-progress frame and settled,
 the racing walkthrough to confirm none of this touched the already-
 verified in-race screens.
 
+### Real bug: the login form's submit button could be unreachable
+
+Reported directly: "I put the name and the pin, but I can't submit."
+The screenshot showed Safari's full chrome (URL bar + toolbar) eating a
+large slice of the real viewport - a state none of the earlier
+390x844/375x667 viewport tests modeled, since a bare headless-browser
+viewport doesn't reproduce a real phone's browser chrome.
+
+`.phone` and `.rig` shared one `overflow: hidden` rule. `.rig` (the
+racing screens) is fine with that - it has its own internal `.stage`
+scroll region, so the outer shell never needs to move. `.phone`
+(landing/login) has no such child; it's the only container there is.
+`max-height: 100svh` already sizes it for the *smallest* real viewport,
+but that's not a guarantee every phone/chrome combination fits inside
+it - and when content didn't fit, `overflow: hidden` meant the excess
+(the "Seal and start" button, always the last flex child) was clipped
+off with nothing to scroll to reach it. Not a slow submit, not a
+validation error - the button was never reachable at all, which matches
+"I can't submit" exactly.
+
+Confirmed the actual mechanism, not just patched around the symptom:
+rendered the login page at a deliberately constrained 390x550 viewport,
+read the button's `getBoundingClientRect()` to prove it sat below the
+fold (`top: 605` in a `550`-tall viewport), then scrolled `.phone`
+programmatically and confirmed the button became reachable and
+clickable (a real login round-trip completed after scrolling it into
+view). Fixed by giving `.rig` its own `overflow: hidden` and `.phone`
+`overflow-y: auto` instead of sharing one rule - scrolling is now a real
+guarantee on any device, not a hope that the height budget matches
+reality.
+
+Also trimmed real vertical space so scrolling is the rare fallback, not
+the default experience: tighter margins on `.logo-frame`/`.brief`/
+`.brief .field`, and shortened the login line ("Keep this tab awake
+once the race starts" trimmed - the essential point, "the server owns
+the clock," stayed). Measured before and after: constrained-viewport
+content height dropped from 682px to 641px. At a realistic short
+viewport (375x667) the button now fits with zero overflow; even at the
+390x550 stress case it's a 91px scroll instead of needing to guess
+where the button went.
+
 ## The real route
 
 `challenges/barcelona-route.json` (paired with `challenges/teams.barcelona.json`)

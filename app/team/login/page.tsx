@@ -79,7 +79,7 @@ export default function LoginPage() {
         </div>
         <h1>OPEN THE
           <br />ROUTE</h1>
-        <p className="line">One game phone per team. Keep this tab awake once the race starts - the server owns the clock.</p>
+        <p className="line">One game phone per team. The server owns the clock.</p>
         <div className="field">
           <label htmlFor="teamId">Team</label>
           <select id="teamId" value={teamId} onChange={(e) => setTeamId(e.target.value)}>

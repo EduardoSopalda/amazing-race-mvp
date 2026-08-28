@@ -209,16 +209,28 @@ td {
   background: var(--black);
   color: #efeaf2;
   font-family: var(--mono);
-  overflow: hidden;
 }
 .phone {
   display: flex;
   flex-direction: column;
   padding: calc(16px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+  /* Unlike .rig (which has its own internal .stage scroll region and
+     deliberately never scrolls itself), .phone has no such child - it's
+     the only container there is. max-height:100svh already sizes it for
+     the *smallest* real viewport (Safari's toolbars fully expanded), but
+     that's not a guarantee this content fits every phone/chrome
+     combination - if it doesn't, this has to scroll rather than clip,
+     or the primary button (always the last flex child) becomes
+     unreachable with no way to get to it. A real report: on an iPhone
+     with Safari's full chrome showing, the login form's "Seal and
+     start" button was clipped below the fold with nothing to scroll. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .rig {
   display: grid;
   grid-template-columns: 18px 1fr;
+  overflow: hidden;
   /* minmax(0,1fr): a grid item's default min-height is auto, so without
      the explicit 0 the .stage row won't shrink below its content and
      would push .thumb off the bottom on tall content - the same class
@@ -530,8 +542,8 @@ td {
 .logo-frame {
   position: relative;
   width: min(230px, 68%);
-  margin: 16px auto 14px;
-  padding: 14px 14px 12px;
+  margin: 10px auto 10px;
+  padding: 12px 12px 10px;
   background: linear-gradient(180deg, #1a1922, #101014 70%);
   border: 1px solid #2a2830;
   box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.6), 0 10px 22px rgba(0, 0, 0, 0.4);
@@ -554,7 +566,7 @@ td {
 .brief {
   background: var(--paper);
   color: var(--ink);
-  padding: 16px 16px 14px;
+  padding: 14px 16px 12px;
   position: relative;
   box-shadow: inset 0 0 0 1px #d8c48a;
 }
@@ -595,7 +607,7 @@ td {
   gap: 3px;
 }
 .brief-meta b { color: #6d6454; font-weight: 500; }
-.brief .field { margin-top: 14px; }
+.brief .field { margin-top: 10px; }
 .brief .field label {
   display: block;
   font-size: 0.55rem;
