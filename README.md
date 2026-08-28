@@ -102,120 +102,110 @@ Phase 8 polish (a live map, richer challenge types, course close). See
 "What's not built yet" below for exactly what that leaves unautomated on
 the real route.
 
-## Player visual skin
+## Player visual skin: the Gab Lab race dossier
 
-`app/team/page.tsx` now renders through a "torn route envelope" identity
-(cream packet, terracotta primary verb, team-colour rail, a decisive
-green/amber/red verdict panel per outcome) instead of the plain dark
-`.card` UI the rest of the site still uses. `/admin` and `/leaderboard`
-are untouched - the skin's CSS is scoped to `.phone`/`.packet`/`.thumb`/
-`.verdict`, appended to `app/globals.css` after the original rules, not
-replacing them.
+The site runs the **gab-lab-final** design pack's "locked direction" -
+a black/paper/yellow "race dossier" identity (Bebas Neue display,
+Fraunces serif clue text, IBM Plex Mono telemetry) across `/`,
+`/team/login`, and `/team`, replacing an earlier "torn route envelope"
+skin entirely (see git history if you need it - it's gone from the
+working tree, not layered underneath). `/admin` and `/leaderboard` are
+still the original plain dark UI, untouched, on purpose.
 
-What actually changed in `app/team/page.tsx`, beyond the markup: every
-outcome (correct, wrong, ambiguous, skip, an exhausted retry) now renders
-through one `Verdict` object (`kind`, `heading`, `text`, `cta`, `onCta`)
-as a full-panel takeover instead of an inline message next to the form -
-this is a real behaviour change, not just a restyle, and it's why a wrong
-answer or a failed upload now feels like a distinct moment rather than a
-line of red text. `postJsonWithRetry`, the geolocation watch effect,
-`compressImage`, and every `idempotencyKey` call site are untouched.
+**Shape.** `/team` uses `.rig` - a CSS grid with an 18px team-colour
+`.rail` down the left edge, then `.tele` (telemetry header: `GAB LAB /
+BARCELONA`, a live-status word, `TEAM {name}`, a big yellow race/
+countdown clock, coordinates + points/checkpoint), `.stage` (a `.dossier`
+paper card or a full-panel `.verdict`), and `.thumb` (one yellow
+`button.go` + a muted `.skip` link). `/` and `/team/login` use the
+simpler `.phone` flex shell instead - no rail, since no team is
+confirmed yet at either point.
 
-Three integration bugs were caught only by rendering the real app with
-real checkpoint data, not by reading the CSS pack in isolation - each
-fixed here in `app/globals.css` and also in the original design-pack
-files sent separately, so the pack itself stays correct for next time:
+**Behaviour, not just restyle.** Every outcome still funnels through one
+`Verdict` object (`kind: cleared|rejected|hold`, `heading`, `text`,
+`cta`, `onCta`) rendered as a full-panel takeover - same pattern as the
+previous skin, carried over because it earned its place. New this time:
+a **`review` state** while a photo is mid-upload/mid-AI-judging
+(`photoBusy`) - the dossier card itself says "PHOTO UNDER REVIEW" with a
+disabled "UNDER REVIEW" button, instead of just swapping button label
+text. `postJsonWithRetry`, the geolocation watch effect, `compressImage`,
+and every `idempotencyKey` call site are untouched, same as always.
 
-- **The verdict panel rendered as a narrow column, not full-width.**
-  `.stage` is a `<main>` element (per the pack's own integration
-  instructions), and the site's pre-existing base `main { max-width:480px;
-  margin:0 auto; }` rule still applied on top of it. Combined with `.stage`
-  being a CSS grid item of `.phone`, an unset width plus `margin:auto`
-  shrank it to content size instead of filling the grid cell. Fixed with
-  an explicit `max-width:none; margin:0;` on `.stage`.
-- **The photo checkpoint's "camera frame" placeholder rendered as bare
-  text, no box.** `.preview` (the before-a-photo placeholder) was only
-  ever defined in the standalone prototype's own `<style>` - `team-skin.css`
-  carried `.preview-frame` (the after-a-photo state) but never picked up
-  its sibling. Added the missing rule.
-- **The final checkpoint's "Clear" verdict never appeared - the player
-  jumped straight to "Race complete."** A correct submission on the *last*
-  checkpoint sets `state.finished` in the same update as the verdict
-  itself; the render logic checked `state.finished` before `verdict`, so
-  the finished packet pre-empted the celebratory panel entirely. Fixed by
-  checking `verdict` first, always - the finished packet only ever shows
-  once the player has dismissed it.
+**Audio.** `lib/audioRace.ts` - ported from the pack's own inline script
+- synthesizes six SFX (unlock, review, verified, rejected, skip, locked)
+via raw Web Audio oscillators, no audio files. Wired to the real
+events: GPS acceptance, a photo entering review, a correct/wrong verdict,
+a skip tap. `boot()` runs on the first tap anywhere (a global click
+listener) since starting an `AudioContext` requires a user gesture; muted
+state persists to `localStorage` (a per-viewer UI preference, not race
+state, so it doesn't belong on the server) and defaults to unmuted unless
+`prefers-reduced-motion` is set. A real, permanent mute toggle sits in
+the telemetry header - the pack's own `.dock` mute button was
+prototype-only chrome, per its own README ("do not ship the prototype
+`.dock`").
+
+**Not in the pack, built here, same lesson as last time:** the self-
+checked text-answer state (5 of 6 desk-route checkpoints; the pack only
+ever demoed the photo flow) - a `.dossier` card with `.field` +
+`input[type="text"]`, same real markup principle as before.
+
+**Fonts** are self-hosted via `next/font/google` (Bebas Neue, Fraunces,
+IBM Plex Mono) in `app/layout.tsx`, not the pack's own Google Fonts
+`<link>` tags - no external request, no flash of unstyled text.
+
+**Logo.** The pack shipped `logo-gablab.jpg` on an opaque white
+background; rendered as designed, that's a visible white box floating on
+the black UI. Reused the transparent PNG/WebP from the earlier skin
+instead (same artwork) - same intent as "do not restyle the mark," just
+without shipping a background that clearly wasn't the point.
+
+Two real bugs, found by rendering the actual pack files and the real app
+with real data, not by reading the CSS - plus one thing worth naming that
+this pack got *right* where the previous one didn't:
+
+- **The standalone dossier prototype already used `height:100dvh` +
+  `minmax(0,1fr)` correctly** - unlike the previous pack, it didn't
+  reproduce the earlier grid-blowout bug, and `dossier.css` already
+  carried everything the dossier card needed (no `.preview`/`.pin input`
+  -style gap this time). Confirmed by rendering it directly before
+  touching any code, at both a normal and a short (375x667) viewport, not
+  assumed from the CSS alone.
+- **An anchor's underline bled through a `display:grid` button even with
+  `text-decoration:none` on the button itself.** `next/link`'s `<a>`
+  wraps `button.ghost` ("View leaderboard"); once `.ghost` was set to
+  `display:grid` to center its text, Chromium still painted the ancestor
+  anchor's UA-default underline through it - only a genuinely
+  atomic-inline box (the UA default for `<button>`) blocks that, and
+  `display:grid` isn't one. `text-decoration:none` on the *button* is
+  therefore not sufficient; fixed on the anchor instead
+  (`.actions a { text-decoration: none; display: block; }`), confirmed
+  by reading the button's own `getComputedStyle` (already correct) before
+  finding the real cause elsewhere.
+- **Field labels and checkpoint place names rendered in whatever case the
+  source data happened to use**, not the pack's own all-caps convention -
+  `.place`, `.dossier .field label`, and `.brief .field label` were
+  missing `text-transform: uppercase`. A cosmetic gap the mock's own
+  hardcoded all-caps strings never exposed. Added to all three.
 
 Verified live end to end via Playwright against the real desk-race route
-with the AI judging call stubbed: full run through all 6 checkpoint types
-(wrong answer -> red -> resubmit -> correct -> green, straight through to
-the photo checkpoint and finish), at both 390x844 and a short 375x667
-viewport, plus a check that `/admin` and `/leaderboard` render unchanged
-(one pre-existing, unrelated nit found there - the custom penalty row's
-"seconds" input placeholder truncates to "secon" at its fixed 70px width;
-confirmed present before this change too, not something this patch caused,
-left as-is).
+with the AI judging call stubbed: landing → login → all 6 checkpoints
+(wrong → rejected → resubmit → correct → cleared, through to the photo
+checkpoint), the `review` pending state specifically (captured by
+delaying the `/api/team/photo` response so it isn't raced past locally),
+finish, leaderboard, and `/admin` - at 390x844 and a short 375x667
+viewport. `/admin` and `/leaderboard` confirmed unchanged (the same
+pre-existing, unrelated "seconds" input truncation noted before is still
+there, still not this patch's to fix).
 
-Three calls made without stopping to ask, each reversible:
+Two calls made without stopping to ask, both reversible and consistent
+with the calls made on the previous skin:
 
-- **Organiser-queue copy softened.** The pack's amber verdict said "an
-  organiser has the queue" for an ambiguous photo - untrue today, there's
-  no cross-team queue yet (see "What's not built yet"). Now reads "no
-  penalty - try a clearer photo, or an organiser can step in," true either
-  way.
-- **Font stack shipped as designed** - system `Arial Narrow`/`Impact`, no
-  self-hosted face. Solid on iOS, will fall back further on some Android
-  phones; a real cost for a walk-around event with mixed phones, not
-  fixed here.
-- **Team Red's rail colour left as-is**, close to the alert/incorrect red.
-  The verdict text ("No") already carries the meaning regardless of
-  colour; a deliberate nudge apart is still on the table if it reads badly
-  live.
-
-Login (`app/team/login/page.tsx`) now uses the same skin too: `.phone` +
-a `.packet` styled "Official device" form (team picker, PIN), with Gab's
-event logo (`public/amazing-race-logo.png`/`.webp`) above it in place of
-the racing header - deliberately *not* the `.strip` used everywhere else,
-since there's no team, checkpoint, or clock to show yet at login (the
-design review's own finding: a race header on the login screen shows a
-race that hasn't started). The logo was resized from a 2.7MB source PNG
-to a 900px-wide WebP (~155KB) with a PNG fallback via `<picture>`, both
-committed to `public/`.
-
-Two more gaps only surfaced once the login screen actually had enough
-content to expose them - the racing screens' shorter content never
-triggered either:
-
-- **`.pin input` - the styled team PIN field - had the same gap as
-  `.preview`**: only ever defined in the standalone prototype's own
-  `<style>`, never carried into `team-skin.css`. Added it.
-- **A real CSS Grid bug: `.phone` only had `min-height`, not a definite
-  `height`.** A grid container's `1fr` track only truly constrains its
-  content when the container's own size is *definite* - with only
-  `min-height`, tall content (the login logo plus its packet) just grew
-  `.phone` past the viewport instead of scrolling inside `.stage`,
-  pushing the "Seal and start" button off the bottom of the screen on
-  short phones. Confirmed by measuring actual computed heights via
-  Playwright (`.phone` rendered 713px tall in a 667px viewport before the
-  fix), not just by eye. Fixed with an explicit `height: 100dvh` (with
-  the `100svh` fallback pair already there) alongside the existing
-  `min-height`, plus `min-height: 0` on `.stage` itself so its own
-  `overflow: auto` can actually take over. This is a real fix for every
-  `.phone` screen, not just login - it just took login's taller content
-  to expose it.
-
-Verified the same way: a full Playwright login round-trip (team select,
-PIN, submit, lands on `/team`) at three viewports (390x844, a short
-375x667, and 414x896), confirming the logo renders, the form is usable,
-and - the actual regression check - the "Seal and start" button stays
-fully visible and clickable at the shortest tested height.
-
-`app/page.tsx` (the site root, `/`) got the same treatment - it had been
-untouched since Phase 2 and was telling visitors "No GPS, no photos yet -
-text-answer checkpoints only," which stopped being true back in Phase 3.
-Now shows the logo, real copy, and the two entry buttons ("Play as a
-team," "View leaderboard") through the same skin. Verified both links
-still route correctly and the buttons stay visible at the short viewport.
+- **Organiser-queue copy stays softened** ("no penalty - try a clearer
+  photo, or an organiser can step in") for the ambiguous-photo `hold`
+  verdict - still no real cross-team queue (see "What's not built yet").
+- **Team Red's rail colour (`#e94b5f`) left as-is**, same reasoning as
+  before - the verdict heading text carries the meaning regardless of
+  colour.
 
 ## The real route
 

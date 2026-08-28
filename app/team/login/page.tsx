@@ -51,53 +51,62 @@ export default function LoginPage() {
   }
 
   return (
-    // No .strip here, deliberately - there's no team, checkpoint, or race
-    // clock yet at login, so this doesn't borrow the in-race header (a real
-    // gap the design review caught: showing another team's mid-race state
-    // stamped across a login screen).
+    // Plain .phone shell (no .rail/.rig grid) - deliberately: there's no
+    // team, checkpoint, or race clock confirmed yet at login, so this
+    // doesn't borrow the in-race header (a real gap the design review
+    // caught: showing another team's mid-race state before login).
     <div className="phone">
-      <main className="stage">
-        <div className="login-brand">
-          <picture>
-            <source srcSet="/amazing-race-logo.webp" type="image/webp" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/amazing-race-logo.png" alt="The Amazing Race Barcelona - Gab Lab Edition" />
-          </picture>
+      <div className="tele">
+        <div className="tele-top">
+          <span>GAB LAB / BARCELONA</span>
+          <span className="live">LIVE EVENT</span>
         </div>
-        <form id="login-form" className="packet pin" onSubmit={handleSubmit}>
-          <span className="stamp">Official device</span>
-          <h1>Open the route</h1>
-          <p className="mission">One game phone per team. Keep this tab awake once the race starts - the server owns the clock.</p>
-          <div className="field">
-            <label htmlFor="teamId">Team</label>
-            <select id="teamId" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="pin">Team PIN</label>
-            <input
-              id="pin"
-              type="tel"
-              inputMode="numeric"
-              autoComplete="off"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              placeholder="1111"
-            />
-          </div>
-          {error && <p className="error">{error}</p>}
-        </form>
-      </main>
-      <footer className="thumb">
-        <button type="submit" form="login-form" className="primary" disabled={submitting || !teamId || !pin}>
-          {submitting ? "Starting..." : "Seal and start"}
+      </div>
+
+      <picture>
+        <source srcSet="/amazing-race-logo.webp" type="image/webp" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="logo" src="/amazing-race-logo.png" alt="The Amazing Race Barcelona - Gab Lab Edition" />
+      </picture>
+
+      <form id="login-form" className="brief" onSubmit={handleSubmit}>
+        <div className="id">
+          <span>GL-BCN · DOSSIER</span>
+          <span>OFFICIAL DEVICE</span>
+        </div>
+        <h1>OPEN THE
+          <br />ROUTE</h1>
+        <p className="line">One game phone per team. Keep this tab awake once the race starts - the server owns the clock.</p>
+        <div className="field">
+          <label htmlFor="teamId">Team</label>
+          <select id="teamId" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="pin">Team PIN</label>
+          <input
+            id="pin"
+            type="tel"
+            inputMode="numeric"
+            autoComplete="off"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="1111"
+          />
+        </div>
+        {error && <p className="error">{error}</p>}
+      </form>
+
+      <div className="actions">
+        <button type="submit" form="login-form" className="go" disabled={submitting || !teamId || !pin}>
+          {submitting ? "STARTING..." : "SEAL AND START"}
         </button>
-      </footer>
+      </div>
     </div>
   );
 }
