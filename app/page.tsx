@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useKeyboardAwareViewport } from "@/lib/useKeyboardAwareViewport";
 
 const TELE_TEXT = "GAB LAB / BARCELONA";
 
@@ -33,6 +34,7 @@ function useTypewriter(text: string, speedMs = 32): string {
 }
 
 export default function HomePage() {
+  useKeyboardAwareViewport();
   const [teamCount, setTeamCount] = useState<number | null>(null);
   const typed = useTypewriter(TELE_TEXT);
   const typing = typed.length < TELE_TEXT.length;

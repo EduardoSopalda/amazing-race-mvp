@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useKeyboardAwareViewport } from "@/lib/useKeyboardAwareViewport";
 
 interface PublicTeam {
   id: string;
@@ -10,6 +11,7 @@ interface PublicTeam {
 }
 
 export default function LoginPage() {
+  useKeyboardAwareViewport();
   const router = useRouter();
   const [teams, setTeams] = useState<PublicTeam[]>([]);
   const [teamId, setTeamId] = useState("");

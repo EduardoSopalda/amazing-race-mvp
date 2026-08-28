@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TeamStatePayload } from "@/lib/teamState";
 import * as AudioRace from "@/lib/audioRace";
+import { useKeyboardAwareViewport } from "@/lib/useKeyboardAwareViewport";
 
 function formatSeconds(totalSeconds: number): string {
   const clamped = Math.max(0, Math.round(totalSeconds));
@@ -104,6 +105,7 @@ interface Verdict {
 }
 
 export default function TeamPage() {
+  useKeyboardAwareViewport();
   const router = useRouter();
   const [state, setState] = useState<TeamStatePayload | null>(null);
   const [error, setError] = useState<string | null>(null);

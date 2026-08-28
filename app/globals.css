@@ -204,6 +204,12 @@ td {
   width: min(430px, 100%);
   height: 100svh;
   height: 100dvh;
+  /* --app-vh (set by useKeyboardAwareViewport, via window.visualViewport)
+     wins once JS has run - dvh/svh never shrink for the on-screen
+     keyboard, only for browser chrome, so a focused input's keyboard
+     could otherwise cover the primary button with nothing accounting
+     for it. Falls back to the dvh above until the effect runs. */
+  height: var(--app-vh, 100dvh);
   max-height: 100svh;
   margin: 0 auto;
   background: var(--black);
@@ -546,18 +552,13 @@ td {
   padding: 12px 12px 10px;
   background: linear-gradient(180deg, #1a1922, #101014 70%);
   border: 1px solid #2a2830;
+  border-radius: 6px;
   box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.6), 0 10px 22px rgba(0, 0, 0, 0.4);
 }
-.logo-frame::before,
-.logo-frame::after {
-  content: "";
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border: 1px solid var(--mute);
-}
-.logo-frame::before { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
-.logo-frame::after { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+/* Deliberately no corner brackets here, unlike .dossier/.brief - on a
+   busy photographic image those read as crop/viewfinder marks (like the
+   artwork is being cut off), not as "official document" framing. They
+   work on the text-based paper cards; they didn't work on the logo. */
 .logo-frame img {
   display: block;
   width: 100%;

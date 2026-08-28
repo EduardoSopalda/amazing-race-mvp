@@ -310,6 +310,50 @@ viewport (375x667) the button now fits with zero overflow; even at the
 390x550 stress case it's a 91px scroll instead of needing to guess
 where the button went.
 
+### Two more real reports: the on-screen keyboard, and the logo's corner marks
+
+**The keyboard could hide the submit button, and it didn't come back
+when the keyboard closed.** The scroll fix above covers Safari's own
+chrome (address bar, toolbars) - `100dvh`/`100svh` do account for that.
+Neither accounts for the *on-screen keyboard* at all; that's a separate
+browser behaviour with no CSS unit for it. A focused input's keyboard
+could cover the button with nothing in the layout aware it needed to
+move, and - matching the report exactly - dismissing the keyboard again
+didn't reliably bring the layout back either, since nothing was tracking
+the transition either direction.
+
+`lib/useKeyboardAwareViewport.ts` fixes this with the one API that
+*does* see the keyboard: `window.visualViewport`, which reports the
+real visible area and fires `resize` as the keyboard opens and closes.
+The hook keeps a `--app-vh` custom property in sync with it; `.phone`/
+`.rig` use `height: var(--app-vh, 100dvh)`, so the shell's real height
+now tracks the keyboard both ways, not just browser chrome. Wired into
+all three pages that render `.phone`/`.rig` (`/`, `/team/login`,
+`/team` - the racing screen's own text-answer input triggers the same
+keyboard).
+
+A real on-screen keyboard can't be triggered in headless Chromium (it's
+an OS-level thing, not something a browser viewport simulates on a
+Linux sandbox), so this was verified by mocking `window.visualViewport`
+itself - injected via `page.addInitScript` before any page script runs,
+with a controllable `height` and a real `resize` event - and driving it
+through the actual sequence: shrink it 320px (a typical keyboard height)
+and confirm `--app-vh` and `.phone`'s real height both drop to match and
+the button becomes reachable by scrolling within that smaller space;
+restore it and confirm the layout returns to full height. All four
+numbers checked programmatically (`getComputedStyle`,
+`getBoundingClientRect`), not eyeballed from a screenshot.
+
+**The logo's corner marks read as crop marks, not "official document"
+framing.** `.logo-frame` borrowed the same L-shaped corner brackets
+`.dossier`/`.brief` use - correct instinct, since it's meant to read as
+belonging to the same system, but on a busy photographic image (not a
+plain paper card) those brackets read as photography crop/viewfinder
+marks - like the artwork was being cut off, not held. Removed them
+specifically from `.logo-frame` (kept everywhere else, where they read
+correctly) - it's now a plain rounded dark card, same desaturation and
+size as before.
+
 ## The real route
 
 `challenges/barcelona-route.json` (paired with `challenges/teams.barcelona.json`)
